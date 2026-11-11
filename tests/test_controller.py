@@ -8,7 +8,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock
 
-from test_binary import code
+from test_binary import code, distance_code
 
 ROOT=Path(__file__).resolve().parents[1]
 package=types.ModuleType('direct_test_package')
@@ -131,6 +131,16 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.controller._receive_chain=(c.time.monotonic()-1,[('tv','volume')],1)
         self.controller.receive(repeat)
         self.assertFalse(self.controller.last_received['matched'])
+
+    async def test_first_press_matches_without_receive_history(self):
+        self.controller.client.learn.return_value=c.IRCode.parse(distance_code(repeat=True).packet)
+        await self.controller.learn('tv',['menu'])
+        self.assertIsNone(self.controller._receive_chain)
+        self.controller.receive(bytes((230,))+distance_code(reindex=True,split=True).packet)
+        self.assertEqual(self.controller.last_received['command'],'menu')
+        self.assertFalse(self.controller.last_received['is_repeat'])
+        self.assertEqual(self.controller.receive_log[0]['kind'],'known')
+        self.assertEqual(self.events[-1][0],'irtrans_event')
 
     async def test_learning_persists_and_reload_restores_codes(self):
         await self.controller.learn('tv',['power'])

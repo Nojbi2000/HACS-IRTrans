@@ -14,7 +14,7 @@ import tempfile
 from types import MappingProxyType
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from test_binary import FakeTCPDevice, code
+from test_binary import FakeTCPDevice, code, distance_code
 
 from homeassistant import bootstrap, loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntries
@@ -248,6 +248,19 @@ async def main():
             assert 'codes' not in diagnostic
             print('Live unknown/invalid receive log, Activity descriptions and diagnostics: OK')
             print('Native naming, learning/sending buttons, labels, activity and configurable count: OK')
+            fake.reply=distance_code(repeat=True)
+            await hass.services.async_call('remote','learn_command',{'entity_id':remote,
+                'device':'tv','command':['first_press'],'timeout':5},blocking=True)
+            events.clear()
+            transport.sendto(bytes((230,))+distance_code(reindex=True,split=True).packet,
+                             ('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            await hass.async_block_till_done()
+            assert controller.last_received['command']=='first_press'
+            assert not controller.last_received['is_repeat']
+            assert events[-1]['button']=='first_press'
+            print('First press without repeat suffix and with reindexed timing table: OK')
+
             assert await hass.config_entries.async_unload(entry.entry_id)
             assert hass.data['irtrans']['hub'] is None
             assert not fake.errors,fake.errors

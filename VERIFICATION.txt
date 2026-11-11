@@ -1,3 +1,27 @@
+IRTrans Direct 2.3.1 – first-press recognition, 2026-11-12
+
+52 protocol/controller tests pass. The added regression cases exercise a short
+main frame versus a main+repeat capture, independently reordered timing tables,
+split equivalent timing clusters, all-payload-bit preservation, invalid suffix
+rejection and first-press events without receive history. Native bytes used for
+sending are unchanged. The real-HA test additionally learns a combined record
+and receives an initial-only frame with reordered/split timing indexes.
+
+Local analysis of the supplied 100-packet diagnostic buffer: 18 previously
+unknown frames match Menu (8) or Play (10) against known examples with the new
+comparison, with no cross-match between these two buttons. Other unknown
+payload variants are not assumed equivalent. Raw user diagnostics are not
+published in the repository; regression fixtures contain synthetic payloads.
+
+Reference: manufacturer software manual section 7.5.1 describes command symbols
+as references to pulse/pause timing entries, with S representing the start pair;
+lowlevel.c CalcFramelength and showDebugTiming implement that mapping. The new
+receive-only decoder is bounded to observed 32-bit pulse-distance envelopes;
+existing RC5/RC6, RAW and other special-format matching remains unchanged.
+No new physical IR transmission or fresh capture was performed for this fix.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.3.0 – learned repeats and timed hold, 2026-11-11
 
 47 protocol/controller tests pass. Real HA 2026.11.1 smoke also passes with

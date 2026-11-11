@@ -148,6 +148,59 @@ class IRCode:
             raise ProtocolError("IRDATA has an empty receive signature")
         return bytes(result)
 
+    def main_frame(self) -> bytes | None:
+        """Decode a bounded 32-bit pulse-distance frame using its own table.
+
+        Only the observed 9 ms / 4.5 ms header, 32 short/long spaces and
+        stop pulse are accepted. Optional suffixes must be valid 9 ms /
+        2.25 ms repeat frames. Payload bytes are never masked or corrected.
+        Keep all native bytes unchanged for replay; this key is receive-only.
+        """
+        if self.mode not in (0, 1):
+            return None
+        symbols = self.signature()
+        count = self.packet[41]
+        if not 1 <= count <= 8 or len(symbols) < 34:
+            return None
+        timings = []
+        for symbol in symbols:
+            if symbol == ord("S") and self.mode & 1:
+                index = 0
+            elif ord("0") <= symbol <= ord("7"):
+                index = symbol - ord("0") + (1 if self.mode & 1 else 0)
+            else:
+                return None
+            if index >= count:
+                return None
+            pulse = struct.unpack_from("<h", self.packet, 25 + 2 * index)[0] * 8
+            pause = struct.unpack_from("<h", self.packet, 9 + 2 * index)[0] * 8
+            timings.append((pulse, pause))
+        if not (8000 <= timings[0][0] <= 10000 and 3500 <= timings[0][1] <= 5500):
+            return None
+        bits = []
+        for pulse, pause in timings[1:33]:
+            if not 350 <= pulse <= 850:
+                return None
+            if 350 <= pause <= 850:
+                bits.append(0)
+            elif 1200 <= pause <= 2000:
+                bits.append(1)
+            else:
+                return None
+        if not 350 <= timings[33][0] <= 850:
+            return None
+        suffix = timings[34:]
+        if len(suffix) % 2:
+            return None
+        for header, stop in zip(suffix[::2], suffix[1::2]):
+            if not (8000 <= header[0] <= 10000 and 1700 <= header[1] <= 2800
+                    and 350 <= stop[0] <= 850):
+                return None
+        if not 30 <= self.packet[7] <= 45:
+            return None
+        return bytes(sum(bits[base + bit] << bit for bit in range(8))
+                     for base in range(0, 32, 8))
+
     @property
     def family(self) -> int:
         return self.mode & 159 if self.mode & 128 else self.mode & 28
@@ -157,6 +210,9 @@ class IRCode:
         return hashlib.sha256(bytes((self.family,)) + self.signature()).hexdigest()[:24]
 
     def matches(self, other: IRCode) -> bool:
+        own_main, received_main = self.main_frame(), other.main_frame()
+        if own_main is not None and received_main is not None:
+            return own_main == received_main
         if self.family != other.family:
             return False
         if self.family == 16:

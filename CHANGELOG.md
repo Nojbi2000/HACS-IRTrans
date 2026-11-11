@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.1
+
+- Recognize the observed 32-bit pulse-distance main frame on the first press, with or without appended short repeats.
+- Decode timing-table references before comparing these frames, including reindexed/split short timings.
+- Preserve every payload bit and leave unknown/malformed suffixes unmatched.
+- Keep stored native transmission records unchanged.
+
 ## 2.3.0
 
 - Add Learn repeat using manufacturer normal/raw repeat capture commands.

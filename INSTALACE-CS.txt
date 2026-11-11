@@ -1,4 +1,4 @@
-IRTrans Direct 2.3.0 – Home Assistant, přímo bez irserver
+IRTrans Direct 2.3.1 – Home Assistant, přímo bez irserver
 =====================================================
 Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
 
@@ -12,7 +12,7 @@ CO TATO VERZE DĚLÁ
 - Nepotřebuje irserver, další počítač ani hardwarovou databázi IRDB.
 
 Jde o vlastní novou implementaci pro přímý protokol, ne o oficiální release
-původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.3.0.
+původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.3.1.
 Kódy z ayControl se automaticky neimportují; naučíte je znovu v HA.
 
 INSTALACE / VÝMĚNA PŮVODNÍ INTEGRACE
@@ -75,6 +75,15 @@ i když stránku zrovna nemáte otevřenou. Vypnutí Remote pozastaví příjem 
 Během učení se příjmy logují, ale nespouštějí pojmenované automatizační události.
 Log neznamená automatické naučení: pro uložení vysílatelného povelu slouží Learn.
 
+OPRAVA PRVNÍHO STISKU (2.3.1)
+
+První stisk u pozorovaných 32bitových povelů nyní odpovídá hlavnímu rámci,
+i když naučený záznam obsahuje navíc krátké opakování. Porovnání vychází
+z naměřených pulzů a pauz, takže rozdílné číslování tabulky časování nevadí.
+Žádný datový bit se neignoruje ani neopravuje odhadem. Neznámé či poškozené
+varianty mohou zůstat nerozpoznané. Uložené kódy není nutné znovu učit kvůli
+této opravě; aktualizujte přes HACS a restartujte Home Assistant.
+
 OPAKOVÁNÍ A DRŽENÍ TLAČÍTKA (2.3.0)
 
 U každé pozice jsou nově Learn repeat a Hold 1 s:
@@ -105,7 +114,7 @@ lze omezit na is_repeat: false. Událost puštění se neodhaduje.
 
 OVLADAČE A TLAČÍTKA (2.3.0)
 
-V HACS aktualizujte IRTrans Direct na 2.3.0 a restartujte Home Assistant.
+V HACS aktualizujte IRTrans Direct na 2.3.1 a restartujte Home Assistant.
 Integraci neodstraňujte; naučené kódy a existující ID entit zůstanou zachované.
 
 Settings -> Devices & services -> IRTrans Direct -> Configure:

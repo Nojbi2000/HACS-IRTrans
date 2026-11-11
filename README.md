@@ -39,6 +39,18 @@ An IR code identifies the learned command, not a unique physical handheld remote
 
 The standard remote actions below remain available for scripts and automations.
 
+## First-press matching (2.3.1)
+
+The observed 32-bit pulse-distance codes now match by their complete main frame,
+decoded through each packet's timing table. A first press without appended repeat
+frames can therefore match a learned capture containing those repeats. Timing
+indexes may be rearranged or split into similar measured durations. Recognition
+requires a supported header, all 32 payload bits, a stop pulse and validated
+optional repeat suffixes; it does not trim arbitrary strings or ignore payload
+bits. Original stored code bytes and sending behavior stay intact. Other formats
+keep their existing comparison. This is a bounded decoder, not a universal IR
+protocol recognizer or error-corrector.
+
 ## Repeat learning and held commands (2.3.0)
 
 Each position also has **Learn repeat** and **Hold 1 s** controls:

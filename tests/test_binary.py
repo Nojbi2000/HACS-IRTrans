@@ -25,6 +25,31 @@ def code(data=b'S010101001', mode=1, command=22):
     return b.IRCode.parse(b.checksum(packet))
 
 
+def distance_code(payload=bytes.fromhex('aa5502a5'), *, repeat=False, reindex=False, split=False, start=True):
+    """Synthetic 32-bit frame with timing-table variants observed in LAN captures."""
+    pairs=[(9200,4520),(632,544),(632,1680),(9200,2240),(600,40344)]
+    bits=[(byte >> bit)&1 for byte in payload for bit in range(8)]
+    indexes=[0]+[1+bit for bit in bits]+[4 if repeat else 1]
+    if repeat: indexes += [3,1]
+    if split:
+        pairs.append((688,568))
+        indexes=[5 if index==1 and i%2 else index for i,index in enumerate(indexes)]
+    if reindex:
+        permutation=list(reversed(range(len(pairs))))
+        indexes=[permutation.index(index) for index in indexes]
+        pairs=[pairs[index] for index in permutation]
+        start=False
+    symbols=bytes(ord('S') if start and index==0 else ord('0')+index-int(start) for index in indexes)
+    packet=bytearray(44+len(symbols))
+    packet[0],packet[2],packet[6],packet[7],packet[8]=len(packet),1,len(symbols),38,int(start)
+    packet[41:44]=bytes((len(pairs),1,0))
+    for index,(pulse,pause) in enumerate(pairs):
+        struct.pack_into('<h',packet,9+index*2,pause//8)
+        struct.pack_into('<h',packet,25+index*2,pulse//8)
+    packet[44:]=symbols
+    return b.IRCode.parse(b.checksum(packet))
+
+
 def version():
     packet = bytearray(78)
     packet[:2] = bytes((231, 77))
@@ -81,6 +106,38 @@ class FakeDevice(asyncio.DatagramProtocol):
 
 
 class CodecTests(unittest.TestCase):
+    def test_main_frame_matches_first_press_without_appended_repeat(self):
+        short, combined=distance_code(),distance_code(repeat=True)
+        self.assertNotEqual(short.signature(),combined.signature())
+        self.assertTrue(combined.matches(short))
+        self.assertTrue(short.matches(combined))
+        self.assertEqual(short.main_frame(),bytes.fromhex('aa5502a5'))
+        self.assertEqual(combined.for_send()[6:],combined.packet[6:])
+
+    def test_main_frame_matches_reindexed_and_split_timing_tables(self):
+        original=distance_code(repeat=True)
+        for reindex,split in ((True,False),(False,True),(True,True)):
+            variant=distance_code(reindex=reindex,split=split)
+            self.assertTrue(original.matches(variant))
+            self.assertTrue(variant.matches(original))
+
+    def test_main_frame_preserves_every_payload_bit(self):
+        original=distance_code(repeat=True)
+        for payload in ('aa5504a5','aa5502fd','ab5502a5'):
+            self.assertFalse(original.matches(distance_code(bytes.fromhex(payload))))
+
+    def test_main_frame_rejects_noise_and_unknown_suffixes(self):
+        self.assertIsNone(code(data=b'S0').main_frame())
+        self.assertIsNone(code(data=b'00',mode=0).main_frame())
+        original=distance_code(repeat=True)
+        bad=bytearray(original.packet)
+        bad[-2]=ord('0')  # replace repeat header with a short pulse
+        self.assertIsNone(b.IRCode.parse(b.checksum(bad)).main_frame())
+        self.assertFalse(distance_code().matches(b.IRCode.parse(b.checksum(bad))))
+        bad=bytearray(original.packet)
+        bad[7]=56
+        self.assertIsNone(b.IRCode.parse(b.checksum(bad)).main_frame())
+
     def test_c_reference_vectors(self):
         lines = (ROOT / 'tests/reference-frames.txt').read_text().splitlines()
         packets = [b.version_command(), b.learn_command(), b.learn_command(True), b.control(0, b'\0\0')]

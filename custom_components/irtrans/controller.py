@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 import logging
+import time
 from zoneinfo import ZoneInfo
 
 from homeassistant.components import persistent_notification
@@ -61,6 +62,7 @@ class Controller:
         self.receive_log_entity_id = None
         self.receive_log = deque(maxlen=100)
         self.receive_log_count = 0
+        self._receive_chain = None
         self.groups = remote_groups(entry.options)
         self.slot_indices = [group["base"] + number for group in self.groups
                              for number in range(1, group["button_count"] + 1)]
@@ -154,6 +156,8 @@ class Controller:
                 if not isinstance(record, dict) or not isinstance(record.get("hex"), str):
                     raise ProtocolError("Invalid saved IRTrans code record")
                 IRCode.from_hex(record["hex"]).signature()
+                if "repeat_hex" in record:
+                    IRCode.from_hex(record["repeat_hex"]).signature()
         self.codes = stored["codes"]
         if "slots" in stored:
             if not isinstance(stored["slots"], dict):
@@ -239,14 +243,52 @@ class Controller:
                 })
             finally:
                 self.learning = False
+                self._receive_chain = None
                 persistent_notification.async_dismiss(self.hass, self.notification_id)
+
+    async def learn_repeat(self, device, command, *, timeout=30):
+        device = device_name(device)
+        names([command])
+        if not 5 <= timeout <= 120:
+            raise ValueError("Learning timeout must be between 5 and 120 seconds")
+        async with self.operation():
+            if command not in self.codes.get(device, {}):
+                raise ValueError("Learn the main command first")
+            self.learning = True
+            self.notify()
+            try:
+                persistent_notification.async_create(
+                    self.hass,
+                    f"Hold **{self.command_info(device, command)['label']}** on the original "
+                    "remote for 2–3 seconds to learn its repeat code.",
+                    title="IRTrans: learn repeat", notification_id=self.notification_id,
+                )
+                record = self.codes[device][command]
+                code = await self.client.learn(raw=record.get("raw", False), timeout=timeout, repeat=True)
+                updated = deepcopy(self.codes)
+                updated[device][command].update(
+                    repeat_hex=code.packet.hex(),
+                    repeat_learned_at=datetime.now(timezone.utc).isoformat(),
+                )
+                await self.save_library(updated)
+                self.online = True
+            finally:
+                self.learning = False
+                self._receive_chain = None
+                persistent_notification.async_dismiss(self.hass, self.notification_id)
+
+    def slot_repeat_learned(self, index):
+        slot = self.slots[str(index)]
+        return bool(self.codes.get(slot["device"], {}).get(slot["command"], {}).get("repeat_hex"))
 
     async def send(self, device: str | None, commands: Iterable[str], *,
                    repeats: int = 1, delay: float = .4, led: str = "default",
-                   context=None, source: str = "HA action"):
+                   context=None, source: str = "HA action", hold_secs: float = 0):
         device, commands = device_name(device), names(commands)
         if not 1 <= repeats <= 100 or not 0 <= delay <= 60:
             raise ValueError("Repeats must be 1–100 and delay 0–60 seconds")
+        if hold_secs and (not .1 <= hold_secs <= 10 or len(commands) != 1 or repeats != 1):
+            raise ValueError("Hold requires one command, num_repeats=1 and 0.1–10 seconds")
         # Sending lists may legitimately contain repeated command names.
         async with self.operation():
             try:
@@ -254,15 +296,29 @@ class Controller:
                           for name in commands]
             except KeyError as exc:
                 raise ValueError(f"Unknown command {device}/{exc.args[0]}; learn it first") from exc
+            repeat_code = None
+            if hold_secs:
+                repeat_hex = self.codes[device][commands[0]].get("repeat_hex")
+                if not repeat_hex:
+                    raise ValueError("Use Learn repeat before sending a held command")
+                repeat_code = IRCode.from_hex(repeat_hex)
             for repetition in range(repeats):
                 for index, (command, code) in enumerate(frames):
                     if repetition or index:
                         await asyncio.sleep(delay)
-                    await self.client.send(code, led)
+                    frame_count = 1
+                    if hold_secs:
+                        frame_count = await self.client.send_hold(
+                            code, repeat_code, seconds=hold_secs,
+                            interval=float(self.entry.options.get("repeat_interval", .11)), led=led,
+                        )
+                    else:
+                        await self.client.send(code, led)
                     self.online = True
                     self.sent_count += 1
                     self.last_sent = {"device": device, "command": command,
                                       **self.command_info(device, command), "source": source,
+                                      "hold_secs": hold_secs, "frame_count": frame_count,
                                       "at": datetime.now(timezone.utc).isoformat()}
                     self.hass.bus.async_fire("irtrans_sent", {
                         "entry_id": self.entry.entry_id,
@@ -282,7 +338,7 @@ class Controller:
                 del updated[device]
             await self.save_library(updated)
 
-    def record_receive(self, data: bytes, *, code=None, matches=(), error=None):
+    def record_receive(self, data: bytes, *, code=None, matches=(), error=None, is_repeat=False, repeat_count=0):
         """Keep a bounded live log and describe every received device datagram."""
         now = datetime.now(timezone.utc)
         zone = getattr(getattr(self.hass, "config", None), "time_zone", "UTC")
@@ -301,12 +357,14 @@ class Controller:
         readable = (payload.decode("ascii") if payload and all(32 <= byte < 127 for byte in payload)
                     else payload.hex())
         summary = label if matches else f"{label} · {readable[:64]}"
+        if is_repeat:
+            summary += f" · repeat {repeat_count}"
         record = {"number": self.receive_log_count, "at": now.isoformat(),
                   "time": local_time, "source": self.client.ip, "kind": kind,
                   "label": label, "packet_type": data[0] if data else None,
                   "raw_hex": data.hex(), "data": readable,
                   "fingerprint": code.fingerprint if code is not None else None,
-                  "during_learning": self.learning,
+                  "during_learning": self.learning, "is_repeat": is_repeat, "repeat_count": repeat_count,
                   "message": f"{local_time} · {summary}"}
         if error is not None:
             record["error"] = str(error)
@@ -318,7 +376,7 @@ class Controller:
             "message": f"received {summary}", "source": self.client.ip,
             "kind": kind, "fingerprint": record["fingerprint"],
             "packet_type": record["packet_type"], "number": record["number"],
-            "during_learning": self.learning,
+            "during_learning": self.learning, "is_repeat": is_repeat, "repeat_count": repeat_count,
         })
 
     def receive(self, data: bytes):
@@ -334,15 +392,31 @@ class Controller:
             matches = [(device, command) for device, commands in self.codes.items()
                        for command, record in commands.items()
                        if IRCode.from_hex(record["hex"]).matches(code)]
+            now = time.monotonic()
+            chain = self._receive_chain
+            recent = chain is not None and now - chain[0] <= .5
+            is_repeat, repeat_count = False, 0
+            if not matches and recent:
+                # A short repeat may be shared by many buttons: only associate
+                # it with the immediately preceding, still-active named command.
+                matches = [(device, command) for device, command in chain[1]
+                           if "repeat_hex" in self.codes.get(device, {}).get(command, {})
+                           and IRCode.from_hex(self.codes[device][command]["repeat_hex"]).matches(code)]
+            if matches and recent and set(matches) == set(chain[1]):
+                is_repeat, repeat_count = True, chain[2] + 1
+            # Unknown traffic breaks the chain; learning cannot arm a named hold.
+            self._receive_chain = (now, matches, repeat_count) if matches and not self.learning else None
         except ProtocolError as exc:
+            self._receive_chain = None
             self.record_receive(data, error=exc)
             self.notify()
             return
-        self.record_receive(data, code=code, matches=matches)
+        self.record_receive(data, code=code, matches=matches, is_repeat=is_repeat, repeat_count=repeat_count)
         self.online = True
         self.received_count += 1
         event = {"entry_id": self.entry.entry_id, "host": self.client.ip,
                  "fingerprint": fingerprint, "matched": bool(matches),
+                 "is_repeat": is_repeat, "repeat_count": repeat_count,
                  "at": datetime.now(timezone.utc).isoformat()}
         self.last_received = dict(event)
         if matches:

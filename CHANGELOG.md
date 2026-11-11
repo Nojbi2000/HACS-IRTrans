@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.0
+
+- Add Learn repeat using manufacturer normal/raw repeat capture commands.
+- Persist separate repeat records transactionally with existing main codes.
+- Add timed Hold buttons and standard remote.send_command hold_secs.
+- Send initial and subsequent repeat codes on one acknowledged BINA connection.
+- Add configurable hold duration and minimum repeat interval.
+- Mark contextual receive repeat chains without attributing isolated shared repeats.
+
 ## 2.2.0
 
 - Add independently named remotes, each shown as a child device with 1–32 command positions.

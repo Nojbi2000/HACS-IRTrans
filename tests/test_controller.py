@@ -82,6 +82,56 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored.slots['1001']['label'], 'Amp power')
         self.assertTrue(restored.slot_learned(2))
 
+    async def test_repeat_learning_is_transactional_and_persists(self):
+        await self.controller.learn('tv', ['volume'])
+        original = deepcopy(self.controller.codes)
+        self.controller.client.learn.side_effect = TimeoutError()
+        with self.assertRaises(TimeoutError):
+            await self.controller.learn_repeat('tv', 'volume')
+        self.assertEqual(self.controller.codes, original)
+        self.controller.client.learn.side_effect = None
+        self.controller.client.learn.return_value = c.IRCode.parse(code(data=b'S01').packet)
+        await self.controller.learn_repeat('tv', 'volume')
+        self.controller.client.learn.assert_awaited_with(raw=False,timeout=30,repeat=True)
+        self.assertEqual(self.controller.codes['tv']['volume']['hex'], original['tv']['volume']['hex'])
+        await self.controller.load()
+        self.assertEqual(self.controller.codes['tv']['volume']['repeat_hex'], code(data=b'S01').packet.hex())
+
+    async def test_hold_requires_repeat_and_routes_separate_codes(self):
+        await self.controller.learn('tv', ['volume'])
+        self.controller.client.send_hold = AsyncMock(return_value=3)
+        with self.assertRaises(ValueError):
+            await self.controller.send('tv', ['volume'], hold_secs=.2)
+        self.controller.client.send_hold.assert_not_awaited()
+        self.controller.client.learn.return_value = c.IRCode.parse(code(data=b'S01').packet)
+        await self.controller.learn_repeat('tv', 'volume')
+        await self.controller.send('tv', ['volume'], hold_secs=.2)
+        args=self.controller.client.send_hold.await_args
+        self.assertNotEqual(args.args[0].packet,args.args[1].packet)
+        self.assertEqual(args.kwargs['seconds'],.2)
+        self.assertEqual(self.controller.last_sent['frame_count'],3)
+
+    async def test_repeat_receive_requires_recent_initial_command(self):
+        await self.controller.learn('tv', ['volume'])
+        self.controller.client.learn.return_value = c.IRCode.parse(code(data=b'S01').packet)
+        await self.controller.learn_repeat('tv', 'volume')
+        repeat=bytes((230,))+code(data=b'S01',command=1).packet
+        self.controller.receive(repeat)
+        self.assertFalse(self.controller.last_received['matched'])
+        self.controller.receive(bytes((230,))+code(command=1).packet)
+        self.assertFalse(self.controller.last_received['is_repeat'])
+        self.controller.receive(repeat)
+        self.assertTrue(self.controller.last_received['is_repeat'])
+        self.assertEqual(self.controller.last_received['command'],'volume')
+        self.assertEqual(self.controller.last_received['repeat_count'],1)
+        self.assertIn('repeat 1',self.controller.receive_log[0]['message'])
+        self.controller.receive(bytes((230,))+code(data=b'S11111',command=1).packet)
+        self.controller.receive(repeat)
+        self.assertFalse(self.controller.last_received['matched'])
+        self.controller._receive_chain=(c.time.monotonic()-1,[('tv','volume')],1)
+        self.controller.receive(repeat)
+        self.assertFalse(self.controller.last_received['matched'])
+
     async def test_learning_persists_and_reload_restores_codes(self):
         await self.controller.learn('tv',['power'])
         saved=deepcopy(self.controller.codes)

@@ -52,13 +52,11 @@ class IRTransRemote(IRTransEntity, RemoteEntity):
 
     async def async_send_command(self, command, **kwargs):
         try:
-            if kwargs.get("hold_secs", 0):
-                raise ValueError("hold_secs is not supported; use num_repeats instead")
             await self.controller.send(
                 kwargs.get("device"), command, repeats=kwargs.get("num_repeats", 1),
                 delay=kwargs.get("delay_secs", .4),
                 led=self.controller.entry.options.get("led", "default"),
-                context=self._context,
+                context=self._context, hold_secs=kwargs.get("hold_secs", 0),
             )
         except (ValueError, ProtocolError, OSError, TimeoutError) as exc:
             raise HomeAssistantError(str(exc) or "IRTrans transmission was not acknowledged") from exc

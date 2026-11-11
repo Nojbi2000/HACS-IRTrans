@@ -103,4 +103,8 @@ class IRTransOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(step_id="output", data_schema=vol.Schema({
             vol.Required("led", default=self.config_entry.options.get("led", "default")):
                 vol.In(["default", "internal", "external", "both"]),
+            vol.Required("hold_secs", default=self.config_entry.options.get("hold_secs", 1)):
+                vol.All(vol.Coerce(float), vol.Range(min=.1, max=10)),
+            vol.Required("repeat_interval", default=self.config_entry.options.get("repeat_interval", .11)):
+                vol.All(vol.Coerce(float), vol.Range(min=.03, max=1)),
         }))

@@ -106,7 +106,7 @@ async def main():
             # Native per-position naming and buttons work without YAML actions.
             texts=hass.states.async_all('text')
             buttons=hass.states.async_all('button')
-            assert len(texts)==8 and len(buttons)==16,(len(texts),len(buttons))
+            assert len(texts)==8 and len(buttons)==32,(len(texts),len(buttons))
             name=next(state.entity_id for state in texts if state.attributes.get('slot')==2)
             learn=next(state.entity_id for state in buttons if state.attributes.get('slot')==2 and state.attributes.get('action')=='learn')
             send=entity_registry.async_get(hass).async_get_entity_id('button','irtrans',f'{entry.entry_id}-slot-2-send')
@@ -143,7 +143,7 @@ async def main():
             await hass.async_block_till_done()
             controller=hass.data['irtrans']['entries'][entry.entry_id]
             assert len(hass.states.async_all('text'))==12
-            assert len(hass.states.async_all('button'))==24
+            assert len(hass.states.async_all('button'))==48
             assert controller.slots['2']['label']=='TV mute'
             assert controller.slot_learned(2)
             assert hass.states.get(name).state=='TV mute'
@@ -161,7 +161,7 @@ async def main():
             await hass.async_block_till_done()
             controller=hass.data['irtrans']['entries'][entry.entry_id]
             assert len(hass.states.async_all('text'))==16
-            assert len(hass.states.async_all('button'))==32
+            assert len(hass.states.async_all('button'))==64
             new_name=registry.async_get_entity_id('text','irtrans',f'{entry.entry_id}-slot-1001-name')
             new_device=devices.async_get(registry.async_get(new_name).device_id)
             assert new_device.name=='Amplifier'
@@ -189,12 +189,37 @@ async def main():
             # Output settings must preserve both remote definitions.
             options=await hass.config_entries.options.async_init(entry.entry_id)
             options=await hass.config_entries.options.async_configure(options['flow_id'],{'next_step_id':'output'})
-            options=await hass.config_entries.options.async_configure(options['flow_id'],{'led':'both'})
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'led':'both','hold_secs':.3,'repeat_interval':.05})
             await hass.async_block_till_done()
             controller=hass.data['irtrans']['entries'][entry.entry_id]
             assert len(controller.groups)==2
             assert entry.options['led']=='both'
             print('Multiple remote devices, rename/resize, independent code bindings and stable IDs: OK')
+            # Capture a distinct repeat, then use native Hold and standard hold_secs.
+            hold=registry.async_get_entity_id('button','irtrans',f'{entry.entry_id}-slot-2-hold')
+            repeat_learn=registry.async_get_entity_id('button','irtrans',f'{entry.entry_id}-slot-2-learn_repeat')
+            assert hass.states.get(hold).state=='unavailable'
+            fake.reply=code(data=b'S01')
+            await hass.services.async_call('button','press',{'entity_id':repeat_learn},blocking=True)
+            await hass.async_block_till_done()
+            assert controller.slot_repeat_learned(2)
+            assert hass.states.get(hold).state!='unavailable'
+            before=len(fake.sent)
+            await hass.services.async_call('button','press',{'entity_id':hold},blocking=True)
+            held=fake.sent[before:]
+            assert len(held)>1
+            assert held[0][6:]==bytes.fromhex(controller.codes['buttons']['button_02']['hex'])[6:]
+            assert all(frame[6:]==fake.reply.packet[6:] for frame in held[1:])
+            before=len(fake.sent)
+            await hass.services.async_call('remote','send_command',{'entity_id':remote,
+                'device':'buttons','command':['button_02'],'hold_secs':.2},blocking=True)
+            assert len(fake.sent)>before+1
+            assert await hass.config_entries.async_reload(entry.entry_id)
+            await hass.async_block_till_done()
+            controller=hass.data['irtrans']['entries'][entry.entry_id]
+            assert controller.slot_repeat_learned(2)
+            print('Native Learn repeat / Hold, distinct repeat frames, standard hold_secs and durable storage: OK')
+
             from custom_components.irtrans.logbook import async_describe_events
             descriptions={}
             async_describe_events(hass,lambda domain,event,callback:descriptions.update({event:callback}))

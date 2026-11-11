@@ -39,6 +39,22 @@ An IR code identifies the learned command, not a unique physical handheld remote
 
 The standard remote actions below remain available for scripts and automations.
 
+## Repeat learning and held commands (2.3.0)
+
+Each position also has **Learn repeat** and **Hold 1 s** controls:
+
+1. Use **Learn** and briefly press the original remote button.
+2. Use **Learn repeat** and hold that same button for 2–3 seconds.
+3. **Send** transmits the saved main code; **Hold** sends the main code followed by the saved repeat code over one BINA TCP connection.
+
+Both full native records are saved in HA, without guessing which bytes can be discarded. Manufacturer commands HOST_LEARNIRREPEAT (146) and HOST_LEARNIRRAWREPEAT (210) capture the repeat variant. A new main capture clears the old repeat capture, so relearn both if replacing a command. Timeout/storage failure leaves existing captures intact.
+
+Under **Configure → IR output and hold duration**, set a hold duration of 0.1–10 seconds and a repeat interval of 0.03–1 second (default 0.11). The interval is the minimum between send starts; device ACK latency and learned firmware repeat metadata affect actual IR timing. No hardware timing precision is claimed. Hold requires an explicitly learned repeat variant, including for remotes that repeat the full code.
+
+Standard `remote.send_command` accepts `hold_secs` for one command with `num_repeats: 1`. Native HA buttons run a configured duration after one click; holding the UI button does not provide press/release events or stop transmission early. No automatic retransmission occurs after lost acknowledgement.
+
+Receive events and the log include `is_repeat` and `repeat_count`. Matching frames within 0.5 seconds form a repeat chain; a short repeat variant is associated only with the immediately preceding matching learned command. An isolated shared repeat is left unknown. Timing-based grouping cannot distinguish a very fast double press from a held full-code repeat and does not infer release events. Existing events still fire for each packet for compatibility; automations can filter `is_repeat: false` to act on the initial event only.
+
 ## Learn a command
 
 Open **Developer tools → Actions → YAML mode**. Replace the entity ID if yours differs:
@@ -103,7 +119,7 @@ The log is a monitor, not a learned-code store. Unknown or malformed received pa
 
 Codes are stored in HA's `.storage/irtrans_<entry_id>_codes` as complete native IRDATA records encoded in hex, including timing and carrier information. Include HA configuration in backups. Do not edit the storage file manually. HACS updates only integration files; the code library remains outside the integration directory. Deleting and re-adding the configuration entry creates a different storage key.
 
-Unsupported features fail explicitly: IRDATA records larger than 255 bytes, unrecognized special formats, Pronto/CCF import, `hold_secs`, separate repeat-frame learning, and alternative-code captures. `command_type: raw` is available for exceptional learning cases; matching RAW receive signals also requires compatible device receive settings. Physical compatibility with every remote and hardware variant is not claimed.
+Unsupported features fail explicitly: IRDATA records larger than 255 bytes, unrecognized special formats, Pronto/CCF import and alternative-code captures. `command_type: raw` is available for exceptional learning cases; matching RAW receive signals also requires compatible device receive settings. Physical compatibility with every remote and hardware variant is not claimed.
 
 The remote entity's turn-on/turn-off actions enable or disable the integration's handling; they do not transmit a TV power command.
 

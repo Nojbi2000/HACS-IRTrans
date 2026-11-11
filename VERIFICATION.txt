@@ -1,3 +1,31 @@
+IRTrans Direct 2.3.0 – learned repeats and timed hold, 2026-11-11
+
+47 protocol/controller tests pass. Real HA 2026.11.1 smoke also passes with
+external networking disabled and simulated TCP hardware / UDP reception.
+New tests cover manufacturer opcodes 146/210, distinct main/repeat captures,
+transactional learning failure preserving both codes, persistent repeat reload,
+single-session hold frame ordering, busy rejection with no reconnect/retry,
+missing repeat rejection before transmission, contextual repeat association,
+repeat counters and expiry. The real-HA test exercises native Learn repeat and
+Hold buttons, standard hold_secs, independent repeat frames and durable reload.
+
+Protocol references: official 6.10.23 remote.h HOST_LEARNIRREPEAT=146,
+HOST_LEARNIRRAWREPEAT=210; lowlevel.c LearnRepeatIREx/LearnRawIRRepeatEx,
+DoSendIR uses initial and separate repeat captures; server.c COMMAND_LRNRPT
+stores the separate repeat capture as a paired command. Softwarehandbuch_EN.pdf
+(2013), section 3.1.1, describes holding the remote to learn repeat variants.
+
+No physical IR learning/replay was tested for this update. Hold uses a
+configurable minimum between acknowledged request starts, not guaranteed
+IR frame timing. Native buttons run a finite duration rather than press/release
+control. Incoming repeat grouping uses a 500 ms contextual heuristic, so fast
+full-code double presses can be classified as repeats. Shared short repeats
+without a matching prior command remain unknown. Learned IRDATA is retained
+intact; firmware-internal repeat metadata is not stripped or guessed.
+
+Earlier historical verification records follow; former repeat/hold limitations
+in those dated records are superseded by this release.
+
 IRTrans Direct 2.2.0 – multiple remote devices, 2026-11-11
 
 40 protocol/controller tests pass. The full real-HA 2026.11.1 test also passes

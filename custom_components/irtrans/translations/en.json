@@ -25,7 +25,7 @@
         "menu_options": {
           "add_remote": "Add remote",
           "select_remote": "Edit remote / add buttons",
-          "output": "IR LED output"
+          "output": "IR output and hold duration"
         }
       },
       "add_remote": {
@@ -51,10 +51,13 @@
         }
       },
       "output": {
-        "title": "IR LED output",
+        "title": "IR output and hold duration",
         "data": {
-          "led": "IR LED output"
-        }
+          "led": "IR LED output",
+          "hold_secs": "Hold duration (seconds, 0.1–10)",
+          "repeat_interval": "Repeat interval (seconds, 0.03–1)"
+        },
+        "description": "Hold sends the main command once, then its learned repeat code. Interval is the minimum between sends; device acknowledgements may extend it."
       }
     },
     "error": {

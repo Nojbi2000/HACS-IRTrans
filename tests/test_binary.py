@@ -60,7 +60,7 @@ class FakeDevice(asyncio.DatagramProtocol):
             if ir[2] == 2:
                 if self.behavior != 'silent':
                     self.transport.sendto(version(), target)
-            elif ir[2] in (18, 82):
+            elif ir[2] in (18, 82, 146, 210):
                 if self.behavior == 'learn_error':
                     bad = bytearray(self.reply.packet)
                     bad[2] = 32
@@ -87,6 +87,10 @@ class CodecTests(unittest.TestCase):
         for index, packet in enumerate(packets):
             self.assertEqual(b.envelope(packet, 31000).hex(), lines[index])
         self.assertEqual(lines[4], '68 44 41 78')
+
+    def test_repeat_learning_opcodes_from_manufacturer_header(self):
+        self.assertEqual(b.learn_command(repeat=True), b.control(146, bytes(4)))
+        self.assertEqual(b.learn_command(raw=True, repeat=True), b.control(210, bytes(4)))
 
     def test_send_keeps_timings_and_replaces_routing(self):
         original = code()
@@ -244,7 +248,7 @@ class FakeTCPDevice(FakeDevice):
                     return
                 if ir[2] == 2:
                     response = bytes((230,))+code(command=1).packet+version()
-                elif ir[2] in (18,82):
+                elif ir[2] in (18,82,146,210):
                     if self.behavior == 'silent':
                         continue
                     learned = bytearray(self.reply.packet)
@@ -272,6 +276,30 @@ class FakeTCPDevice(FakeDevice):
 
 
 class TCPNetworkTests(unittest.IsolatedAsyncioTestCase):
+    async def test_hold_uses_one_session_and_distinct_repeat_frames(self):
+        initial, repeat = code(data=b'S01010'), code(data=b'S01')
+        connections = self.fake.connections
+        count = await self.client.send_hold(initial, repeat, seconds=.18, interval=.05)
+        self.assertGreaterEqual(count, 2)
+        self.assertEqual(self.fake.connections, connections + 1)
+        self.assertEqual(self.fake.sent, [initial.for_send()] + [repeat.for_send()] * (count - 1))
+        self.assertFalse(self.fake.errors)
+
+    async def test_hold_busy_does_not_retry_or_reconnect(self):
+        self.fake.behavior = 'busy'
+        connections = self.fake.connections
+        with self.assertRaises(b.ProtocolError):
+            await self.client.send_hold(code(), code(), seconds=.2)
+        self.assertEqual(len(self.fake.sent), 1)
+        self.assertEqual(self.fake.connections, connections + 1)
+
+    async def test_repeat_learning_over_tcp(self):
+        await self.client.learn(repeat=True)
+        self.assertEqual(self.fake.requests[-1][2],146)
+        await self.client.learn(raw=True,repeat=True)
+        self.assertEqual(self.fake.requests[-1][2],210)
+
+
     async def asyncSetUp(self):
         self.fake=FakeTCPDevice()
         self.client=b.BinaryClient('127.0.0.1',await self.fake.start())

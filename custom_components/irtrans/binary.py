@@ -45,9 +45,9 @@ def version_command() -> bytes:
     return control(2, bytes((0x27, 0x0B, 0x64, 0xB3, 0x8B)))
 
 
-def learn_command(raw: bool = False) -> bytes:
+def learn_command(raw: bool = False, repeat: bool = False) -> bytes:
     # LearnIREx with configured receiver/timeout/tolerance, no persistent changes.
-    return control(82 if raw else 18, b"\0\0\0\0")
+    return control((210 if raw else 146) if repeat else (82 if raw else 18), b"\0\0\0\0")
 
 
 def envelope(packet: bytes, result_port: int, sequence: int = 0) -> bytes:
@@ -257,31 +257,9 @@ class BinaryClient:
                 await asyncio.sleep(.5)
                 writer.write(envelope(packet, 0))
                 await writer.drain()
-                while True:
-                    kind = (await reader.readexactly(1))[0]
-                    if len(reply_types) < 20:
-                        reply_types.append(kind)
-                    if kind in (ACK, ACK_WAIT, ACK_DUPLICATE, ACK_BUSY):
-                        response = bytes((kind,))
-                    elif 230 <= kind <= 253:
-                        # Binary status packets contain netcommand, then IRDATA
-                        # length (which includes the length byte itself).
-                        length = (await reader.readexactly(1))[0]
-                        if length < 1:
-                            raise ProtocolError("Invalid binary TCP status length")
-                        response = bytes((kind, length)) + await reader.readexactly(length - 1)
-                    else:
-                        raise ProtocolError(f"Unexpected binary TCP status type {kind}")
-                    _LOGGER.debug("IRTrans binary TCP reply type %s, %s bytes", kind, len(response))
-                    if kind == ACK_BUSY:
-                        raise ProtocolError("IRTrans reports that its IR output is busy")
-                    if kind in (239, 248):
-                        raise ProtocolError(f"IRTrans rejected the binary packet ({kind})")
-                    if kind == expected or (expected == ACK and kind == ACK_DUPLICATE):
-                        completed = True
-                        return response
-                    # Relay frames may precede a requested reply. Read each whole
-                    # frame and wait for the matching type, never just one read().
+                response = await self._read_tcp_reply(reader, expected, reply_types)
+                completed = True
+                return response
         except TimeoutError as exc:
             received = ",".join(map(str, reply_types)) or "none"
             raise TimeoutError(
@@ -295,6 +273,77 @@ class BinaryClient:
             if writer is not None:
                 if learning and not completed and not writer.is_closing():
                     writer.write(envelope(control(0, b"\0\0"), 0))
+                writer.close()
+                try:
+                    async with asyncio.timeout(2):
+                        await writer.wait_closed()
+                except (OSError, TimeoutError):
+                    pass
+
+    async def _read_tcp_reply(self, reader, expected, reply_types):
+        while True:
+            kind = (await reader.readexactly(1))[0]
+            if len(reply_types) < 20:
+                reply_types.append(kind)
+            if kind in (ACK, ACK_WAIT, ACK_DUPLICATE, ACK_BUSY):
+                response = bytes((kind,))
+            elif 230 <= kind <= 253:
+                # Binary status packets contain netcommand, then IRDATA
+                # length (which includes the length byte itself).
+                length = (await reader.readexactly(1))[0]
+                if length < 1:
+                    raise ProtocolError("Invalid binary TCP status length")
+                response = bytes((kind, length)) + await reader.readexactly(length - 1)
+            else:
+                raise ProtocolError(f"Unexpected binary TCP status type {kind}")
+            _LOGGER.debug("IRTrans binary TCP reply type %s, %s bytes", kind, len(response))
+            if kind == ACK_BUSY:
+                raise ProtocolError("IRTrans reports that its IR output is busy")
+            if kind in (239, 248):
+                raise ProtocolError(f"IRTrans rejected the binary packet ({kind})")
+            if kind == expected or (expected == ACK and kind == ACK_DUPLICATE):
+                return response
+            # Relay frames may precede a requested reply. Read each whole
+            # frame and wait for the matching type, never just one read().
+
+    async def send_hold(self, initial: IRCode, repeat: IRCode, *, seconds: float,
+                        interval: float = .11, led: str = "default") -> int:
+        """One BINA session: initial code once, then the learned repeat code.
+
+        Interval is a minimum between request starts; ACK latency may extend it.
+        Never replay automatically after a timeout or reconnect during a hold.
+        """
+        if not .1 <= seconds <= 10 or not .03 <= interval <= 1:
+            raise ValueError("Hold must be 0.1–10 seconds; interval 0.03–1 second")
+        if self.transport != "tcp":
+            raise ProtocolError("Hold transmission requires binary TCP")
+        first, following = initial.for_send(led), repeat.for_send(led)
+        writer = None
+        try:
+            async with asyncio.timeout(seconds + 6):
+                reader, writer = await asyncio.open_connection(self.ip, self.port)
+                writer.write(b"BINA")
+                await writer.drain()
+                await asyncio.sleep(.5)
+                clock = asyncio.get_running_loop()
+                start = clock.time()
+                count = 0
+                while True:
+                    if count and clock.time() >= start + seconds:
+                        return count
+                    sent_at = clock.time()
+                    writer.write(envelope(first if count == 0 else following, 0))
+                    await writer.drain()
+                    await self._read_tcp_reply(reader, ACK, [])
+                    count += 1
+                    due = max(sent_at + interval, clock.time())
+                    if due >= start + seconds:
+                        return count
+                    await asyncio.sleep(max(0, due - clock.time()))
+        except asyncio.IncompleteReadError as exc:
+            raise ProtocolError("IRTrans closed the hold connection before acknowledgement") from exc
+        finally:
+            if writer is not None:
                 writer.close()
                 try:
                     async with asyncio.timeout(2):
@@ -353,8 +402,8 @@ class BinaryClient:
     async def version(self) -> dict[str, str]:
         return parse_version(await self._exchange(version_command(), VERSION, 5))
 
-    async def learn(self, *, raw: bool = False, timeout: int = 30) -> IRCode:
-        response = await self._exchange(learn_command(raw), LEARN, timeout, learning=True)
+    async def learn(self, *, raw: bool = False, timeout: int = 30, repeat: bool = False) -> IRCode:
+        response = await self._exchange(learn_command(raw, repeat), LEARN, timeout, learning=True)
         if len(response) < 4:
             raise ProtocolError("Incomplete IRTrans learning response")
         # RCV_STATUS_LENGTH and higher encode failures in the high nibble.

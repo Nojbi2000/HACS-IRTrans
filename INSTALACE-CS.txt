@@ -1,4 +1,4 @@
-IRTrans Direct 2.2.0 – Home Assistant, přímo bez irserver
+IRTrans Direct 2.3.0 – Home Assistant, přímo bez irserver
 =====================================================
 Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
 
@@ -12,7 +12,7 @@ CO TATO VERZE DĚLÁ
 - Nepotřebuje irserver, další počítač ani hardwarovou databázi IRDB.
 
 Jde o vlastní novou implementaci pro přímý protokol, ne o oficiální release
-původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.2.0.
+původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.3.0.
 Kódy z ayControl se automaticky neimportují; naučíte je znovu v HA.
 
 INSTALACE / VÝMĚNA PŮVODNÍ INTEGRACE
@@ -75,15 +75,43 @@ i když stránku zrovna nemáte otevřenou. Vypnutí Remote pozastaví příjem 
 Během učení se příjmy logují, ale nespouštějí pojmenované automatizační události.
 Log neznamená automatické naučení: pro uložení vysílatelného povelu slouží Learn.
 
-OVLADAČE A TLAČÍTKA (2.2.0)
+OPAKOVÁNÍ A DRŽENÍ TLAČÍTKA (2.3.0)
 
-V HACS aktualizujte IRTrans Direct na 2.2.0 a restartujte Home Assistant.
+U každé pozice jsou nově Learn repeat a Hold 1 s:
+1. Learn: původní tlačítko stiskněte krátce (hlavní povel).
+2. Learn repeat: stejné tlačítko držte 2–3 sekundy (opakovací kód).
+3. Send vysílá hlavní povel; Hold vyšle hlavní kód a potom naučené opakování.
+   Hold se zpřístupní až po naučení obou variant. I pokud ovladač opakuje
+   celý povel, proveďte Learn repeat, aby nebylo potřeba chování odhadovat.
+
+Configure -> IR output and hold duration umožňuje nastavit dobu 0,1–10 sekund
+(výchozí 1 s) a interval opakování (výchozí 0,11 s). Ovládací tlačítko Hold
+spustí nastavenou dobu jedním kliknutím; nedetekuje držení a puštění prstu
+v prohlížeči. Pro automatizace lze použít remote.send_command s hold_secs,
+jedním povelem a num_repeats: 1.
+
+Obě varianty se ukládají celé včetně časování do HA. Přenos při držení běží
+v jednom TCP spojení. Interval mezi požadavky může prodloužit čekání na
+potvrzení zařízení; skutečné IR časování ovlivňují i naučená opakování uvnitř
+kódu. Přesnost držení na skutečném zařízení zatím nebyla ověřena.
+Nové naučení hlavního povelu zruší jeho starý repeat; potom naučte repeat znovu.
+
+Příjem a log rozlišují is_repeat a repeat_count. Opakovací rámec se přiřadí
+jen k nedávnému odpovídajícímu povelu (mezera nejvýše 0,5 s). Samostatný
+krátký repeat bez předchozího povelu zůstane neznámý. Velmi rychlé dvojí
+stisknutí nelze od opakování celého kódu spolehlivě odlišit jen podle času.
+Události se nadále vytvářejí pro všechny pakety; automatizaci pro první stisk
+lze omezit na is_repeat: false. Událost puštění se neodhaduje.
+
+OVLADAČE A TLAČÍTKA (2.3.0)
+
+V HACS aktualizujte IRTrans Direct na 2.3.0 a restartujte Home Assistant.
 Integraci neodstraňujte; naučené kódy a existující ID entit zůstanou zachované.
 
 Settings -> Devices & services -> IRTrans Direct -> Configure:
 - Add remote: zadejte vlastní název (např. Televize) a počet tlačítek 1–32.
 - Edit remote / add buttons: vyberte ovladač, změňte název nebo zvyšte počet.
-- IR LED output: nastavení vysílacích LED.
+- IR output and hold duration: nastavení vysílacích LED.
 
 Každý ovladač se zobrazí jako samostatné zařízení pod IRTrans Direct.
 Dosavadních osm pozic najdete pod Remote 01; tento ovladač lze přejmenovat.
@@ -151,7 +179,7 @@ Seznam command může obsahovat sekvenci několika uložených povelů.
 Přijaté potvrzení znamená, že IRTrans přijal/provedl požadavek; nepotvrzuje,
 že povel skutečně zachytila televize. Při chybě se akce ukončí chybou.
 
-Výstup LED se vybírá přes Configure -> IR LED output u integrace: default, internal,
+Výstup LED se vybírá přes Configure -> IR output and hold duration u integrace: default, internal,
 external nebo both. Výchozí je default podle zařízení. Volba číselných výstupů
 1–8 není v této verzi implementována.
 
@@ -232,8 +260,8 @@ novějším LAN firmware (cílové zařízení má L1.10.30).
 Standardní učení používá nakonfigurovaný přijímač. Pro problematické povely lze
 v learn_command zkusit command_type: raw. RAW příjem pro rozpoznávání vyžaduje
 odpovídající RAW režim zařízení; plugin jej sám nezapíná. RAW není doporučený
-výchozí režim. Alternativní kódy a hold_secs nejsou implementovány; použijte
-oddělená jména, případně num_repeats pro opakovaná plná stisknutí. Speciální
+výchozí režim. Alternativní kódy nejsou implementovány; použijte oddělená jména.
+num_repeats slouží pro opakovaná plná stisknutí, hold_secs pro naučený repeat. Speciální
 opakovačky jako trvalé držení tlačítka nejsou samostatně učené.
 
 Zapnutí/vypnutí remote entity přes remote.turn_on / remote.turn_off pouze

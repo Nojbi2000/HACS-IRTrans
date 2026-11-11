@@ -155,7 +155,7 @@ class NetworkTests(unittest.IsolatedAsyncioTestCase):
         self.fake=FakeDevice()
         self.transport,_=await asyncio.get_running_loop().create_datagram_endpoint(
             lambda:self.fake, local_addr=('127.0.0.1',0))
-        self.client=b.BinaryClient('127.0.0.1',self.transport.get_extra_info('sockname')[1])
+        self.client=b.BinaryClient('127.0.0.1',self.transport.get_extra_info('sockname')[1],transport='udp')
 
     async def asyncTearDown(self):
         self.transport.close()
@@ -207,6 +207,105 @@ class NetworkTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(events),1)
         finally:
             hub.close()
+
+
+class FakeTCPDevice(FakeDevice):
+    """TCP BINA emulator, also usable as an independent UDP relay sender."""
+    def __init__(self):
+        super().__init__()
+        self.server = None
+        self.tasks = []
+        self.connections = 0
+
+    async def start(self):
+        def accept(reader, writer):
+            self.tasks.append(asyncio.create_task(self.handle(reader, writer)))
+        self.server = await asyncio.start_server(accept, '127.0.0.1', 0)
+        return self.server.sockets[0].getsockname()[1]
+
+    async def close(self):
+        self.server.close()
+        await self.server.wait_closed()
+        await asyncio.gather(*self.tasks)
+
+    async def handle(self, reader, writer):
+        self.connections += 1
+        try:
+            assert await reader.readexactly(4) == b'BINA'
+            while True:
+                header = await reader.readexactly(69)
+                assert header[0] == 200 and not any(header[1:68])
+                size = header[68]
+                assert size >= 3
+                ir = bytes((size,)) + await reader.readexactly(size-1)
+                assert ir[1] == sum(ir[2:]) % 256
+                self.requests.append(ir)
+                if self.behavior == 'closed':
+                    return
+                if ir[2] == 2:
+                    response = bytes((230,))+code(command=1).packet+version()
+                elif ir[2] in (18,82):
+                    if self.behavior == 'silent':
+                        continue
+                    learned = bytearray(self.reply.packet)
+                    if self.behavior == 'learn_error': learned[2] = 32
+                    response = bytes((242,))+learned
+                elif ir[2] == 6:
+                    self.sent.append(ir)
+                    response = bytes((215,)) if self.behavior == 'busy' else bytes((213,212))
+                else:
+                    assert ir == b.control(0,b'\0\0')
+                    continue
+                if self.behavior == 'silent': continue
+                writer.write(response[:3])
+                await writer.drain()
+                await asyncio.sleep(0)
+                writer.write(response[3:])
+                await writer.drain()
+        except asyncio.IncompleteReadError:
+            pass
+        except Exception as exc:
+            self.errors.append(exc)
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+
+class TCPNetworkTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.fake=FakeTCPDevice()
+        self.client=b.BinaryClient('127.0.0.1',await self.fake.start())
+
+    async def asyncTearDown(self):
+        await self.fake.close()
+        self.assertEqual(self.fake.errors,[])
+
+    async def test_version_learn_send_on_fresh_tcp_sessions(self):
+        self.assertEqual((await self.client.version())['lan'],'L1.10.30')
+        learned=await self.client.learn()
+        await self.client.send(learned)
+        self.assertEqual(self.fake.connections,3)
+        self.assertEqual(self.fake.sent[0][6:],learned.packet[6:])
+
+    async def test_tcp_busy_and_learning_error(self):
+        self.fake.behavior='busy'
+        with self.assertRaisesRegex(b.ProtocolError,'busy'):
+            await self.client.send(code())
+        self.fake.behavior='learn_error'
+        with self.assertRaisesRegex(b.ProtocolError,'learning failed'):
+            await self.client.learn()
+
+    async def test_tcp_closed_connection_is_clear_error(self):
+        self.fake.behavior='closed'
+        with self.assertRaisesRegex(b.ProtocolError,'closed the binary TCP'):
+            await self.client.version()
+
+    async def test_tcp_timeout_cancels_learning(self):
+        self.fake.behavior='silent'
+        with self.assertRaisesRegex(TimeoutError,'No binary TCP reply'):
+            await self.client._exchange(b.learn_command(),242,.7,learning=True)
+        await asyncio.sleep(.02)
+        self.assertEqual(self.fake.requests[-1],b.control(0,b'\0\0'))
 
 
 if __name__=='__main__':

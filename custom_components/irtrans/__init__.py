@@ -35,7 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
             controller = Controller(hass, entry, ip)
             stage = "loading the HA code library"
             await controller.load()
-            stage = "querying IRTrans firmware via binary UDP"
+            stage = "querying IRTrans firmware via binary TCP"
             await controller.probe()
             if state["hub"] is None:
                 hub = ReceiveHub()

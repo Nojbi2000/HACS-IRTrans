@@ -1,4 +1,4 @@
-"""Direct IRTrans LAN binary UDP transport (no irserver or IRDB required).
+"""Direct IRTrans LAN: TCP BINA commands and UDP relay reception.
 
 Wire layout and matching are derived from IRTrans 6.10.23 remote.h,
 lanio.c, lowlevel.c, fileio.c and server.c. See THIRD-PARTY-NOTICES.txt.
@@ -52,7 +52,7 @@ def learn_command(raw: bool = False) -> bytes:
 
 def envelope(packet: bytes, result_port: int, sequence: int = 0) -> bytes:
     """IRDATA_LAN: command, mode, result_port, 16 uint32 send masks, IRDATA."""
-    if not 0 < result_port <= 65535 or not 0 <= sequence <= 255:
+    if not 0 <= result_port <= 65535 or not 0 <= sequence <= 255:
         raise ValueError("Invalid UDP port/sequence")
     return struct.pack("<BBH16I", 200, sequence, result_port, *([0] * 16)) + packet
 
@@ -223,60 +223,132 @@ async def resolve_ipv4(host: str, port: int) -> str:
 
 
 class BinaryClient:
-    """Each operation has its own reply socket, excluding stale UDP replies."""
-    def __init__(self, ip: str, port: int = 21000):
+    """Use fresh binary TCP sessions; retain explicit UDP mode for compatibility."""
+    def __init__(self, ip: str, port: int = 21000, *, transport: str = "tcp"):
+        if transport not in ("tcp", "udp"):
+            raise ValueError("Transport must be tcp or udp")
         self.ip, self.port = ip, int(port)
+        self.transport = transport
         self._lock = asyncio.Lock()
         self._sequence = 0
 
     async def _exchange(self, packet: bytes, expected: int, timeout: float,
                         learning: bool = False) -> bytes:
         async with self._lock:
-            protocol = _Replies(self.ip)
-            transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
-                lambda: protocol, local_addr=("0.0.0.0", 0), family=socket.AF_INET
-            )
-            reply_port = transport.get_extra_info("sockname")[1]
-            sequence = 0
-            if expected == ACK:
-                self._sequence = self._sequence % 255 + 1
-                sequence = self._sequence
-            completed = False
-            reply_types = []
-            _LOGGER.debug("IRTrans UDP request to %s:%s, expected type %s, reply port %s",
-                          self.ip, self.port, expected, reply_port)
-            try:
-                transport.sendto(envelope(packet, reply_port, sequence), (self.ip, self.port))
-                async with asyncio.timeout(timeout):
-                    while True:
-                        data = await protocol.queue.get()
-                        if isinstance(data, Exception):
-                            raise data
-                        kind = data[0]
-                        if len(reply_types) < 20:
-                            reply_types.append(kind)
-                        _LOGGER.debug("IRTrans UDP reply type %s, %s bytes", kind, len(data))
-                        if kind == ACK_BUSY:
-                            raise ProtocolError("IRTrans reports that its IR output is busy")
-                        if kind in (239, 248):
-                            raise ProtocolError(f"IRTrans rejected the binary packet ({kind})")
-                        if kind == expected or (expected == ACK and kind == ACK_DUPLICATE):
-                            completed = True
-                            return data
-                        # ACK_WAIT does not mean transmitted; await final ACK.
-            except TimeoutError as exc:
-                received = ",".join(map(str, reply_types)) or "none"
-                raise TimeoutError(
-                    f"No UDP reply type {expected} from {self.ip}:{self.port} within "
-                    f"{timeout:g}s (HA reply port {reply_port}; received types: {received}). "
-                    "Check the IRTrans address, IP access rules and bidirectional UDP connectivity."
-                ) from exc
-            finally:
-                if learning and not completed:
-                    # Same cancel frame used by ReadLearndataLAN timeout handling.
-                    transport.sendto(envelope(control(0, b"\0\0"), reply_port),
-                                     (self.ip, self.port))
-                transport.close()
+            if self.transport == "tcp":
+                return await self._exchange_tcp(packet, expected, timeout, learning)
+            return await self._exchange_udp(packet, expected, timeout, learning)
+
+    async def _exchange_tcp(self, packet: bytes, expected: int, timeout: float,
+                            learning: bool = False) -> bytes:
+        """BINA handshake and framed status replies on a dedicated TCP connection.
+
+        IRTransLanSend/open_irtrans_tcp in the official source use BINA and
+        wait 500 ms after initialization. No reply UDP port is requested here.
+        """
+        writer = None
+        completed = False
+        reply_types = []
+        try:
+            async with asyncio.timeout(timeout):
+                reader, writer = await asyncio.open_connection(self.ip, self.port)
+                writer.write(b"BINA")
+                await writer.drain()
+                await asyncio.sleep(.5)
+                writer.write(envelope(packet, 0))
+                await writer.drain()
+                while True:
+                    kind = (await reader.readexactly(1))[0]
+                    if len(reply_types) < 20:
+                        reply_types.append(kind)
+                    if kind in (ACK, ACK_WAIT, ACK_DUPLICATE, ACK_BUSY):
+                        response = bytes((kind,))
+                    elif 230 <= kind <= 253:
+                        # Binary status packets contain netcommand, then IRDATA
+                        # length (which includes the length byte itself).
+                        length = (await reader.readexactly(1))[0]
+                        if length < 1:
+                            raise ProtocolError("Invalid binary TCP status length")
+                        response = bytes((kind, length)) + await reader.readexactly(length - 1)
+                    else:
+                        raise ProtocolError(f"Unexpected binary TCP status type {kind}")
+                    _LOGGER.debug("IRTrans binary TCP reply type %s, %s bytes", kind, len(response))
+                    if kind == ACK_BUSY:
+                        raise ProtocolError("IRTrans reports that its IR output is busy")
+                    if kind in (239, 248):
+                        raise ProtocolError(f"IRTrans rejected the binary packet ({kind})")
+                    if kind == expected or (expected == ACK and kind == ACK_DUPLICATE):
+                        completed = True
+                        return response
+                    # Relay frames may precede a requested reply. Read each whole
+                    # frame and wait for the matching type, never just one read().
+        except TimeoutError as exc:
+            received = ",".join(map(str, reply_types)) or "none"
+            raise TimeoutError(
+                f"No binary TCP reply type {expected} from {self.ip}:{self.port} "
+                f"within {timeout:g}s (received types: {received}). Check the "
+                "IRTrans address and TCP access rules."
+            ) from exc
+        except asyncio.IncompleteReadError as exc:
+            raise ProtocolError("IRTrans closed the binary TCP connection before a complete reply") from exc
+        finally:
+            if writer is not None:
+                if learning and not completed and not writer.is_closing():
+                    writer.write(envelope(control(0, b"\0\0"), 0))
+                writer.close()
+                try:
+                    async with asyncio.timeout(2):
+                        await writer.wait_closed()
+                except (OSError, TimeoutError):
+                    pass
+
+    async def _exchange_udp(self, packet: bytes, expected: int, timeout: float,
+                        learning: bool = False) -> bytes:
+        protocol = _Replies(self.ip)
+        transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            lambda: protocol, local_addr=("0.0.0.0", 0), family=socket.AF_INET
+        )
+        reply_port = transport.get_extra_info("sockname")[1]
+        sequence = 0
+        if expected == ACK:
+            self._sequence = self._sequence % 255 + 1
+            sequence = self._sequence
+        completed = False
+        reply_types = []
+        _LOGGER.debug("IRTrans UDP request to %s:%s, expected type %s, reply port %s",
+                      self.ip, self.port, expected, reply_port)
+        try:
+            transport.sendto(envelope(packet, reply_port, sequence), (self.ip, self.port))
+            async with asyncio.timeout(timeout):
+                while True:
+                    data = await protocol.queue.get()
+                    if isinstance(data, Exception):
+                        raise data
+                    kind = data[0]
+                    if len(reply_types) < 20:
+                        reply_types.append(kind)
+                    _LOGGER.debug("IRTrans UDP reply type %s, %s bytes", kind, len(data))
+                    if kind == ACK_BUSY:
+                        raise ProtocolError("IRTrans reports that its IR output is busy")
+                    if kind in (239, 248):
+                        raise ProtocolError(f"IRTrans rejected the binary packet ({kind})")
+                    if kind == expected or (expected == ACK and kind == ACK_DUPLICATE):
+                        completed = True
+                        return data
+                    # ACK_WAIT does not mean transmitted; await final ACK.
+        except TimeoutError as exc:
+            received = ",".join(map(str, reply_types)) or "none"
+            raise TimeoutError(
+                f"No UDP reply type {expected} from {self.ip}:{self.port} within "
+                f"{timeout:g}s (HA reply port {reply_port}; received types: {received}). "
+                "Check the IRTrans address, IP access rules and bidirectional UDP connectivity."
+            ) from exc
+        finally:
+            if learning and not completed:
+                # Same cancel frame used by ReadLearndataLAN timeout handling.
+                transport.sendto(envelope(control(0, b"\0\0"), reply_port),
+                                 (self.ip, self.port))
+            transport.close()
 
     async def version(self) -> dict[str, str]:
         return parse_version(await self._exchange(version_command(), VERSION, 5))

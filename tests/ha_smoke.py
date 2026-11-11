@@ -1,4 +1,4 @@
-"""Real HA 2026.11.1 integration test with fake UDP hardware, no external network.
+"""Real HA 2026.11.1 integration test with fake TCP hardware and UDP reception, no external network.
 
 Run inside official HA container with this extracted folder mounted at /work:
 python /work/tests/ha_smoke.py
@@ -13,7 +13,7 @@ import tempfile
 from types import MappingProxyType
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from test_binary import FakeDevice, code
+from test_binary import FakeTCPDevice, code
 
 from homeassistant import bootstrap, loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntries
@@ -34,10 +34,10 @@ async def main():
             "persistent_notification": {},
         }, hass=hass)
         assert loaded is not None
-        fake=FakeDevice()
+        fake=FakeTCPDevice()
         transport,_=await asyncio.get_running_loop().create_datagram_endpoint(
             lambda:fake, local_addr=('127.0.0.1',0))
-        device_port=transport.get_extra_info('sockname')[1]
+        device_port=await fake.start()
         # Reserve a free port for the persistent receiver independently.
         holder,_=await asyncio.get_running_loop().create_datagram_endpoint(
             asyncio.DatagramProtocol,local_addr=('127.0.0.1',0))
@@ -76,7 +76,7 @@ async def main():
                 {'entity_id':remote,'device':'tv','command':['power']},blocking=True)
             assert len(fake.sent)==1
             assert fake.sent[0][6:]==fake.reply.packet[6:]
-            print('Send and real UDP acknowledgement: OK')
+            print('Send and real binary TCP acknowledgement: OK')
             transport.sendto(bytes((230,))+code(command=1).packet,('127.0.0.1',receive_port))
             await asyncio.sleep(.05)
             await hass.async_block_till_done()
@@ -115,6 +115,7 @@ async def main():
         finally:
             transport.close()
             await hass.async_stop()
+            await fake.close()
 
 
 asyncio.run(main())

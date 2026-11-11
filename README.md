@@ -2,7 +2,7 @@
 
 A Home Assistant custom integration for direct communication with IRTrans LAN devices, including models without a hardware IR database. Learn commands from an original remote, store complete device-native codes in Home Assistant, send them again, and trigger automations from recognized received commands. No separate `irserver` service is used.
 
-Requires Home Assistant **2026.11.0 or later**. Tested with Home Assistant **2026.11.1**, Python 3.14, and a simulated IRTrans device over real UDP sockets. The target physical firmware is LAN **L1.10.30**, IR **E6.08.10**. Physical-device interoperability still needs confirmation.
+Requires Home Assistant **2026.11.0 or later**. Tested with Home Assistant **2026.11.1**, Python 3.14, and a simulated IRTrans device over real binary TCP and UDP sockets. The target physical firmware is LAN **L1.10.30**, IR **E6.08.10**. Version 2.0.2 has also read the target physical device firmware successfully through TCP BINA. Physical IR learning and transmission still need confirmation.
 
 ## Install with HACS
 
@@ -15,7 +15,7 @@ Once the repository is public:
 3. Add it, find **IRTrans Direct**, and select **Download**.
 4. Restart Home Assistant.
 5. Open **Settings → Devices & services → Add integration → IRTrans Direct**.
-6. Enter the IRTrans device IP, UDP port **21000**, and HA receive port **21000**.
+6. Enter the IRTrans device IP, TCP command port **21000**, and HA UDP receive port **21000**.
 
 This project uses the integration domain `irtrans`. Install only one integration using that domain. Existing configuration entries from the original v1.41 integration can retain their host/port settings. The old custom send actions and infrared emitter are replaced by the standard remote actions below.
 
@@ -87,6 +87,6 @@ The remote entity's turn-on/turn-off actions enable or disable the integration's
 - [Verification record and protocol references](VERIFICATION.txt)
 - [Third-party notices](THIRD-PARTY-NOTICES.txt)
 
-Run unit tests with `python3 -m unittest discover -s tests -v`. A real-HA integration test using simulated UDP hardware is in `tests/ha_smoke.py`. GitHub workflows are included for protocol/storage tests, HACS validation, and Hassfest.
+Run unit tests with `python3 -m unittest discover -s tests -v`. A real-HA integration test using simulated TCP hardware and UDP relay reception is in `tests/ha_smoke.py`. GitHub workflows are included for protocol/storage tests, HACS validation, and Hassfest.
 
 This repository is prepared for installation as a **HACS custom repository**. It has not been submitted to, reviewed by, or accepted into HACS's default catalog.

@@ -1,3 +1,31 @@
+IRTrans Direct 2.0.2 – transport correction, 2026-11-11
+
+Physical device diagnostics:
+- User-provided IRTrans address was reachable from the Mac.
+- TCP ASCI with a separated initialization returned E6.08.10 / L1.10.30.
+- The original version query using an ephemeral UDP reply socket timed out,
+  reproducing the HA setup error; HA later supplied the same timeout message.
+- A binary version query with zero result_port and a receiver bound to UDP
+  21000 returned the correct version. Binarly relayed IRDATA also arrived.
+- TCP BINA with the reference 500 ms initialization delay returned a complete
+  binary firmware response on the TCP connection. This path is now the default
+  for all active commands; passive reception remains UDP IR Relay.
+- No firmware/network settings were modified and no IR code was transmitted
+  during these physical-device probes.
+
+Added framed TCP reads, separate sessions, relay-before-reply handling,
+negative ACK/EOF/timeout errors, and cancellation of unsuccessful learning.
+Explicit UDP mode remains an internal compatibility/testing path, not the HA
+default. No automatic retransmission or protocol fallback sends an IR command twice.
+
+33 local tests passed after the transport change. The full actual-HA smoke
+test now uses TCP command hardware emulation and UDP relay reception. Actual
+IR learning/replay on the user's hardware is still pending; firmware reachability
+alone does not verify those functions.
+
+Historical 2.0.0 verification record follows; its statement about unavailable
+physical hardware refers to the original delivery, not the later 2.0.2 probes.
+
 IRTrans Direct 2.0.0 – verification record, 2026-11-11
 
 Target: the user's LAN firmware L1.10.30, IR firmware E6.08.10, hardware

@@ -5,7 +5,8 @@ from .entity import IRTransEntity
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    async_add_entities([IRTransSensor(hass.data[DOMAIN]["entries"][entry.entry_id])])
+    controller = hass.data[DOMAIN]["entries"][entry.entry_id]
+    async_add_entities([IRTransSensor(controller), IRTransSentSensor(controller)])
 
 
 class IRTransSensor(IRTransEntity, SensorEntity):
@@ -24,7 +25,7 @@ class IRTransSensor(IRTransEntity, SensorEntity):
     def native_value(self):
         received = self.controller.last_received
         if received.get("matched"):
-            return f"{received['device']}/{received['command']}"
+            return received.get("label", f"{received['device']}/{received['command']}")
         return "unknown command" if received else "listening"
 
     @property
@@ -35,3 +36,24 @@ class IRTransSensor(IRTransEntity, SensorEntity):
                 "last_received": self.controller.last_received,
                 "last_error": self.controller.last_error,
                 "receive_port": self.controller.entry.data.get("receive_port", 21000)}
+
+
+class IRTransSentSensor(IRTransEntity, SensorEntity):
+    _attr_name = "Last sent command"
+    _attr_icon = "mdi:remote-tv"
+
+    def __init__(self, controller):
+        super().__init__(controller)
+        self._attr_unique_id = f"{controller.entry.entry_id}-last-sent"
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.controller.sent_sensor_entity_id = self.entity_id
+
+    @property
+    def native_value(self):
+        return self.controller.last_sent.get("label", "nothing sent yet")
+
+    @property
+    def extra_state_attributes(self):
+        return {"sent_count": self.controller.sent_count, **self.controller.last_sent}

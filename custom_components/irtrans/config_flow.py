@@ -51,4 +51,6 @@ class IRTransOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
             vol.Required("led", default=self.config_entry.options.get("led", "default")):
                 vol.In(["default", "internal", "external", "both"]),
+            vol.Required("button_count", default=self.config_entry.options.get("button_count", 8)):
+                vol.All(vol.Coerce(int), vol.Range(min=1, max=32)),
         }))

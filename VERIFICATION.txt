@@ -1,3 +1,26 @@
+IRTrans Direct 2.1.0 – native command controls, 2026-11-11
+
+Added eight default command positions, with a native Text entity for each
+name and native Learn/Send Button entities. Names and stable command bindings
+are stored with the existing code database. Earlier databases containing only
+codes are migrated by offering saved commands in unused default positions.
+Names do not change stored code keys. Options allow 1–32 visible positions;
+hidden positions and codes remain stored. Native Last sent command sensor,
+labeled receive events and a Logbook platform were added. Transmission events
+retain the standard service-call context for HA's actor attribution.
+
+37 protocol/controller tests pass, including label persistence across reload,
+rename failure preserving existing data, old-library button assignment, and
+named receive/send metadata. Actual HA 2026.11.1 tests also exercise native
+text.set_value and button.press, dynamic display names, unavailable Send
+before learning, learning and sending through buttons, last received/sent
+sensors, code/name preservation after reload and changing position count,
+and Activity event descriptions. All physical command tests still use fake
+IR hardware; the verified physical-device work described below concerns
+firmware/network reception, not button-driven IR replay.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.0.2 – transport correction, 2026-11-11
 
 Physical device diagnostics:

@@ -1,4 +1,4 @@
-IRTrans Direct 2.0.2 – Home Assistant, přímo bez irserver
+IRTrans Direct 2.1.0 – Home Assistant, přímo bez irserver
 =====================================================
 Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
 
@@ -59,6 +59,30 @@ Integrace sama trvale nemění nastavení zařízení a neposílá přijaté sig
 automaticky zpět ven. Příjem zpráv vyžaduje dostupný UDP přijímač HA na portu
 21000. Obsazený port hlásí chybu při načítání; integrace tento problém neskrývá.
 V jednom HA může společný přijímač obsloužit více IRTrans s různými adresami.
+
+TLAČÍTKA PŘÍMO NA STRÁNCE ZAŘÍZENÍ (2.1.0)
+
+Otevřete stránku zařízení IRTrans. Ve výchozím stavu je připravených osm pozic.
+U každé pozice nastavte název přes pole například 01 Name, stiskněte 01 Learn
+s vaším názvem a krátce stiskněte tlačítko původního ovladače. Po úspěšném
+naučení se zpřístupní odpovídající 01 Send. Zpráva not learned znamená, že pozice
+ještě nemá uložený kód. Vše funguje bez psaní YAML.
+
+Pole Name mění pouze popisek; uložený kód a jeho klíče pro automatizace zůstanou
+zachované. Dříve uložené povely se při přechodu nabídnou ve volných pozicích.
+Počet pozic lze nastavit na 1–32 přes Configure / Options -> Number of command
+positions. Snížení počtu pozic kódy nesmaže.
+
+Senzory Last received command a Last sent command ukazují pojmenovaný příjem
+a vysílání. Po rozkliknutí jsou dostupné čas a klíče povelu; u vysílání také zdroj
+požadavku (číslované tlačítko nebo HA action). Activity při zapnutém Logbooku
+zobrazuje příjem a vysílání pojmenovaných povelů včetně dostupného kontextu HA.
+
+Fyzický ovladač ani osobu držící ovladač nelze určit jen z IR signálu, pokud
+různé ovladače vysílají stejný kód. Unknown command znamená, že přijatý kód nemá
+shodu v uložené knihovně. Pro jeho uložení použijte Learn, nikoli přepínač Remote.
+
+Níže uvedené akce pro Developer tools zůstávají k dispozici pro automatizace.
 
 UČENÍ JEDNOHO POVELU
 

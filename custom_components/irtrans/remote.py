@@ -58,6 +58,7 @@ class IRTransRemote(IRTransEntity, RemoteEntity):
                 kwargs.get("device"), command, repeats=kwargs.get("num_repeats", 1),
                 delay=kwargs.get("delay_secs", .4),
                 led=self.controller.entry.options.get("led", "default"),
+                context=self._context,
             )
         except (ValueError, ProtocolError, OSError, TimeoutError) as exc:
             raise HomeAssistantError(str(exc) or "IRTrans transmission was not acknowledged") from exc

@@ -21,9 +21,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "IR output",
+        "title": "IR output and command buttons",
         "data": {
-          "led": "IR LED output"
+          "led": "IR LED output",
+          "button_count": "Number of command positions (1\u201332)"
         }
       }
     }

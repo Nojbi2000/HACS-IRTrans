@@ -17,7 +17,7 @@ from test_binary import FakeTCPDevice, code
 
 from homeassistant import bootstrap, loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntries
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, Context
 from homeassistant.setup import async_setup_component
 from homeassistant.helpers import frame, entity_registry, device_registry, area_registry
 
@@ -62,6 +62,8 @@ async def main():
             assert hass.states.get(remote).state=='on'
             controller=hass.data['irtrans']['entries'][entry.entry_id]
             events=[]
+            sent_events=[]
+            hass.bus.async_listen('irtrans_sent',lambda event:sent_events.append(event))
             hass.bus.async_listen('irtrans_event',lambda event: events.append(event.data))
             await hass.services.async_call('remote','learn_command',
                 {'entity_id':remote,'device':'tv','command':['power'],'timeout':5},blocking=True)
@@ -98,6 +100,55 @@ async def main():
             await hass.services.async_call('remote','delete_command',
                 {'entity_id':remote,'device':'tv','command':['power']},blocking=True)
             assert controller.library=={}
+            # Native per-position naming and buttons work without YAML actions.
+            texts=hass.states.async_all('text')
+            buttons=hass.states.async_all('button')
+            assert len(texts)==8 and len(buttons)==16,(len(texts),len(buttons))
+            name=next(state.entity_id for state in texts if state.attributes.get('slot')==2)
+            learn=next(state.entity_id for state in buttons if state.attributes.get('slot')==2 and state.attributes.get('action')=='learn')
+            send=entity_registry.async_get(hass).async_get_entity_id('button','irtrans',f'{entry.entry_id}-slot-2-send')
+            assert send is not None
+            assert hass.states.get(send).state=='unavailable'
+            await hass.services.async_call('text','set_value',{'entity_id':name,'value':'TV mute'},blocking=True)
+            await hass.async_block_till_done()
+            assert hass.states.get(name).state=='TV mute'
+            assert 'TV mute' in hass.states.get(learn).attributes['friendly_name']
+            await hass.services.async_call('button','press',{'entity_id':learn},blocking=True)
+            await hass.async_block_till_done()
+            assert hass.states.get(send).state!='unavailable'
+            before=len(fake.sent)
+            send_context=Context()
+            await hass.services.async_call('button','press',{'entity_id':send},blocking=True,context=send_context)
+            await hass.async_block_till_done()
+            assert len(fake.sent)==before+1
+            assert controller.last_sent['label']=='TV mute'
+            assert sent_events[-1].context.id==send_context.id
+            assert hass.states.get(controller.sent_sensor_entity_id).state=='TV mute'
+            events.clear()
+            transport.sendto(bytes((230,))+code(command=1).packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            await hass.async_block_till_done()
+            assert controller.last_received['label']=='TV mute'
+            assert hass.states.get(sensor).state=='TV mute'
+            assert events[-1]['label']=='TV mute'
+            options=await hass.config_entries.options.async_init(entry.entry_id)
+            assert options['type']=='form',options
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'led':'default','button_count':12})
+            assert options['type']=='create_entry',options
+            await hass.async_block_till_done()
+            controller=hass.data['irtrans']['entries'][entry.entry_id]
+            assert len(hass.states.async_all('text'))==12
+            assert len(hass.states.async_all('button'))==24
+            assert controller.slots['2']['label']=='TV mute'
+            assert controller.slot_learned(2)
+            assert hass.states.get(name).state=='TV mute'
+            from custom_components.irtrans.logbook import async_describe_events
+            descriptions={}
+            async_describe_events(hass,lambda domain,event,callback:descriptions.update({event:callback}))
+            from types import SimpleNamespace
+            described=descriptions['irtrans_event'](SimpleNamespace(data=events[-1]))
+            assert described['message']=='received TV mute'
+            print('Native naming, learning/sending buttons, labels, activity and configurable count: OK')
             assert await hass.config_entries.async_unload(entry.entry_id)
             assert hass.data['irtrans']['hub'] is None
             assert not fake.errors,fake.errors

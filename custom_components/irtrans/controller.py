@@ -52,11 +52,62 @@ class Controller:
         self.last_received: dict = {}
         self.last_sent: dict = {}
         self.received_count = 0
+        self.sent_count = 0
         self.sensor_entity_id = None
+        self.sent_sensor_entity_id = None
+        self.slot_count = max(1, min(32, int(entry.options.get("button_count", 8))))
+        self.slots = {str(index): self.default_slot(index)
+                      for index in range(1, self.slot_count + 1)}
         self._lock = asyncio.Lock()
         self._tasks: set[asyncio.Task] = set()
         self._closing = False
         self._unsubscribe = None
+
+    @staticmethod
+    def default_slot(index):
+        return {"label": f"Button {index:02d}", "device": "buttons",
+                "command": f"button_{index:02d}"}
+
+    def slot_learned(self, index):
+        slot = self.slots[str(index)]
+        return slot["command"] in self.codes.get(slot["device"], {})
+
+    def command_info(self, device, command):
+        for key, slot in self.slots.items():
+            if slot["device"] == device and slot["command"] == command:
+                return {"label": slot["label"], "slot": int(key)}
+        return {"label": f"{device}/{command}", "slot": None}
+
+    def bind_codes(self, codes, slots):
+        """Offer codes learned by remote actions in unused, unnamed positions."""
+        bound = {(slot["device"], slot["command"]) for slot in slots.values()}
+        for device, commands in codes.items():
+            for command in commands:
+                if (device, command) in bound:
+                    continue
+                for index in range(1, self.slot_count + 1):
+                    slot = slots[str(index)]
+                    if (slot == self.default_slot(index)
+                            and slot["command"] not in codes.get(slot["device"], {})):
+                        slots[str(index)] = {"label": f"{device}/{command}"[:100],
+                                             "device": device, "command": command}
+                        bound.add((device, command))
+                        break
+
+    async def save_library(self, codes, slots=None):
+        slots = deepcopy(self.slots) if slots is None else slots
+        self.bind_codes(codes, slots)
+        await self.store.async_save({"codes": codes, "slots": slots})
+        self.codes, self.slots = codes, slots
+
+    async def rename_slot(self, index, label):
+        label = label.strip()
+        if not label or len(label) > 100:
+            raise ValueError("Button name must contain 1–100 characters")
+        async with self.operation():
+            slots = deepcopy(self.slots)
+            slots[str(index)]["label"] = label
+            await self.save_library(deepcopy(self.codes), slots)
 
     @property
     def library(self) -> dict[str, list[str]]:
@@ -86,6 +137,19 @@ class Controller:
                     raise ProtocolError("Invalid saved IRTrans code record")
                 IRCode.from_hex(record["hex"]).signature()
         self.codes = stored["codes"]
+        if "slots" in stored:
+            if not isinstance(stored["slots"], dict):
+                raise ProtocolError("Invalid saved button positions")
+            for key, slot in stored["slots"].items():
+                if (not key.isdecimal() or not 1 <= int(key) <= 32
+                        or not isinstance(slot, dict)
+                        or not isinstance(slot.get("label"), str)
+                        or not 1 <= len(slot["label"].strip()) <= 100):
+                    raise ProtocolError("Invalid saved button position")
+                device_name(slot.get("device"))
+                names([slot.get("command")])
+                self.slots[key] = {name:slot[name] for name in ("label","device","command")}
+        self.bind_codes(self.codes, self.slots)
 
     async def probe(self):
         if self._closing or self._lock.locked():
@@ -140,7 +204,7 @@ class Controller:
                 for command in commands:
                     persistent_notification.async_create(
                         self.hass,
-                        f"Point the original remote at IRTrans and briefly press **{command}** "
+                        f"Point the original remote at IRTrans and briefly press **{self.command_info(device, command)['label']}** "
                         f"for **{device}**. Waiting up to {timeout} seconds.",
                         title="IRTrans: learn command", notification_id=self.notification_id,
                     )
@@ -150,8 +214,7 @@ class Controller:
                         "learned_at": datetime.now(timezone.utc).isoformat(),
                         "raw": raw,
                     }
-                await self.store.async_save({"codes": updated})
-                self.codes = updated
+                await self.save_library(updated)
                 self.online = True
                 self.hass.bus.async_fire("irtrans_learned", {
                     "entry_id": self.entry.entry_id, "device": device, "commands": commands,
@@ -161,7 +224,8 @@ class Controller:
                 persistent_notification.async_dismiss(self.hass, self.notification_id)
 
     async def send(self, device: str | None, commands: Iterable[str], *,
-                   repeats: int = 1, delay: float = .4, led: str = "default"):
+                   repeats: int = 1, delay: float = .4, led: str = "default",
+                   context=None, source: str = "HA action"):
         device, commands = device_name(device), names(commands)
         if not 1 <= repeats <= 100 or not 0 <= delay <= 60:
             raise ValueError("Repeats must be 1–100 and delay 0–60 seconds")
@@ -178,11 +242,15 @@ class Controller:
                         await asyncio.sleep(delay)
                     await self.client.send(code, led)
                     self.online = True
+                    self.sent_count += 1
                     self.last_sent = {"device": device, "command": command,
+                                      **self.command_info(device, command), "source": source,
                                       "at": datetime.now(timezone.utc).isoformat()}
-            self.hass.bus.async_fire("irtrans_sent", {
-                "entry_id": self.entry.entry_id, **self.last_sent,
-            })
+                    self.hass.bus.async_fire("irtrans_sent", {
+                        "entry_id": self.entry.entry_id,
+                        "entity_id": self.sent_sensor_entity_id, **self.last_sent,
+                    }, context=context)
+                    self.notify()
 
     async def delete(self, device: str | None, commands: Iterable[str]):
         device, commands = device_name(device), names(commands)
@@ -194,8 +262,7 @@ class Controller:
                 del updated[device][command]
             if not updated[device]:
                 del updated[device]
-            await self.store.async_save({"codes": updated})
-            self.codes = updated
+            await self.save_library(updated)
 
     def receive(self, data: bytes):
         if self._closing or not self.enabled or self.learning:
@@ -218,14 +285,15 @@ class Controller:
                  "at": datetime.now(timezone.utc).isoformat()}
         self.last_received = dict(event)
         if matches:
-            self.last_received.update({"device": matches[0][0], "command": matches[0][1]})
+            self.last_received.update({"device": matches[0][0], "command": matches[0][1],
+                                       **self.command_info(*matches[0])})
         self.hass.bus.async_fire("irtrans_received", event)
         # Duplicate aliases intentionally produce an event per matching stored name.
         for device, command in matches:
             self.hass.bus.async_fire("irtrans_event", {
                 **event, "entity_id": self.sensor_entity_id,
                 "type": "remote_pressed", "remote": device, "button": command,
-                "device": device, "command": command,
+                "device": device, "command": command, **self.command_info(device, command),
             })
         self.notify()
 

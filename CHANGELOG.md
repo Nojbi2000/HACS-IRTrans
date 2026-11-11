@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0
+
+- Add named command positions to the device page with editable names and Learn/Send buttons.
+- Default to eight positions, configurable from 1 to 32.
+- Preserve names and bindings with the HA code library, including existing-code migration.
+- Show Last sent command and describe named IR receive/send events in Activity.
+- Retain the HA actor context on transmissions; include position labels in events.
+
 ## 2.0.2
 
 - Use binary TCP BINA sessions for firmware queries, learning and transmission.

@@ -21,6 +21,22 @@ This project uses the integration domain `irtrans`. Install only one integration
 
 For manual installation, copy only `custom_components/irtrans` to `/config/custom_components/irtrans` and restart HA.
 
+## Command buttons on the device page (2.1.0)
+
+Open the IRTrans device page under **Settings → Devices & services**. There are eight command positions by default. Each position has:
+
+- **01 Name**: edit the display name, for example `TV power`.
+- **01 Learn · TV power**: press, then briefly press the original remote button when prompted.
+- **01 Send · TV power**: transmit the saved code. Send is unavailable and marked `(not learned)` until a code is saved.
+
+Names and codes survive reloads/restarts. Renaming a position does not change the code or its stable automation keys. Existing saved codes are assigned to unused positions on upgrade. The **Configure / Options → Number of command positions** setting allows 1–32 positions; reducing the visible count does not delete stored codes.
+
+**Last received command** and **Last sent command** show the named codes. Their details include the time, command keys, and, for outgoing commands, whether the request came from a numbered button or an HA action. With HA's Activity/Logbook enabled, named receptions and transmissions are described there; outgoing events retain HA's actor context when available.
+
+An IR code identifies the learned command, not a unique physical handheld remote or the person pressing it. Identical codes emitted by different physical remotes cannot be distinguished by this integration. `unknown command` means received data did not match a stored code.
+
+The standard remote actions below remain available for scripts and automations.
+
 ## Learn a command
 
 Open **Developer tools → Actions → YAML mode**. Replace the entity ID if yours differs:

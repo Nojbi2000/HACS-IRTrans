@@ -49,7 +49,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.events=[]
         self.hass=types.SimpleNamespace(bus=types.SimpleNamespace(
-            async_fire=lambda name,data:self.events.append((name,data))))
+            async_fire=lambda name,data,**kwargs:self.events.append((name,data))))
         self.entry=types.SimpleNamespace(entry_id='entry',data={'port':21000},options={})
         self.controller=c.Controller(self.hass,self.entry,'127.0.0.1')
         self.controller.client.learn=AsyncMock(return_value=c.IRCode.parse(code().packet))
@@ -177,3 +177,40 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await self.controller.learn('tv',commands)
         self.controller.client.learn.assert_not_awaited()
+
+    async def test_button_rename_keeps_code_and_binding_after_reload(self):
+        await self.controller.learn('tv',['power'])
+        slot_before=deepcopy(self.controller.slots['1'])
+        packet=self.controller.codes['tv']['power']['hex']
+        await self.controller.rename_slot(1,'Televize power')
+        self.assertEqual(self.controller.slots['1']['device'],slot_before['device'])
+        self.assertEqual(self.controller.slots['1']['command'],slot_before['command'])
+        self.assertEqual(self.controller.codes['tv']['power']['hex'],packet)
+        self.controller.slots={str(i):self.controller.default_slot(i) for i in range(1,9)}
+        await self.controller.load()
+        self.assertEqual(self.controller.slots['1']['label'],'Televize power')
+        self.assertTrue(self.controller.slot_learned(1))
+
+    async def test_label_save_failure_preserves_old_name(self):
+        original=deepcopy(self.controller.slots)
+        self.controller.store.failure=True
+        with self.assertRaises(OSError):
+            await self.controller.rename_slot(1,'Changed')
+        self.assertEqual(self.controller.slots,original)
+
+    async def test_old_codes_are_offered_as_buttons(self):
+        self.controller.store.saved={'codes':{'old_tv':{'power':{'hex':code().packet.hex()}}}}
+        await self.controller.load()
+        self.assertEqual(self.controller.slots['1']['label'],'old_tv/power')
+        self.assertTrue(self.controller.slot_learned(1))
+
+    async def test_named_button_receive_and_send_include_label(self):
+        await self.controller.rename_slot(2,'TV mute')
+        slot=self.controller.slots['2']
+        await self.controller.learn(slot['device'],[slot['command']])
+        self.controller.receive(bytes((230,))+code(command=1).packet)
+        self.assertEqual(self.controller.last_received['label'],'TV mute')
+        await self.controller.send(slot['device'],[slot['command']],source='Button 02')
+        self.assertEqual(self.controller.last_sent['label'],'TV mute')
+        self.assertEqual(self.controller.last_sent['source'],'Button 02')
+        self.assertEqual(self.controller.sent_count,1)

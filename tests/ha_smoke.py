@@ -6,6 +6,7 @@ python /work/tests/ha_smoke.py
 import asyncio
 from datetime import datetime, timezone
 import json
+
 from pathlib import Path
 import shutil
 import sys
@@ -134,8 +135,10 @@ async def main():
             assert hass.states.get(sensor).state=='TV mute'
             assert events[-1]['label']=='TV mute'
             options=await hass.config_entries.options.async_init(entry.entry_id)
-            assert options['type']=='form',options
-            options=await hass.config_entries.options.async_configure(options['flow_id'],{'led':'default','button_count':12})
+            assert options['type']=='menu',options
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'next_step_id':'select_remote'})
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'remote':'main'})
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'name':'Living room','button_count':12})
             assert options['type']=='create_entry',options
             await hass.async_block_till_done()
             controller=hass.data['irtrans']['entries'][entry.entry_id]
@@ -144,6 +147,54 @@ async def main():
             assert controller.slots['2']['label']=='TV mute'
             assert controller.slot_learned(2)
             assert hass.states.get(name).state=='TV mute'
+            from homeassistant.helpers import device_registry
+            registry=entity_registry.async_get(hass)
+            devices=device_registry.async_get(hass)
+            original_device=devices.async_get(registry.async_get(name).device_id)
+            assert original_device.name=='Living room',original_device
+            assert original_device.via_device_id is not None
+            # A second remote gets independent slots, even with identical button names.
+            options=await hass.config_entries.options.async_init(entry.entry_id)
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'next_step_id':'add_remote'})
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'name':'Amplifier','button_count':4})
+            assert options['type']=='create_entry',options
+            await hass.async_block_till_done()
+            controller=hass.data['irtrans']['entries'][entry.entry_id]
+            assert len(hass.states.async_all('text'))==16
+            assert len(hass.states.async_all('button'))==32
+            new_name=registry.async_get_entity_id('text','irtrans',f'{entry.entry_id}-slot-1001-name')
+            new_device=devices.async_get(registry.async_get(new_name).device_id)
+            assert new_device.name=='Amplifier'
+            assert new_device.id!=original_device.id
+            assert controller.slots['1001']['device']!=controller.slots['1']['device']
+            await hass.services.async_call('text','set_value',{'entity_id':new_name,'value':'Amp power'},blocking=True)
+            new_learn=registry.async_get_entity_id('button','irtrans',f'{entry.entry_id}-slot-1001-learn')
+            await hass.services.async_call('button','press',{'entity_id':new_learn},blocking=True)
+            await hass.async_block_till_done()
+            assert controller.slot_learned(1001)
+            assert controller.slot_learned(2)
+            # Hide and restore learned positions without losing bindings or IDs.
+            for count in (1,12):
+                options=await hass.config_entries.options.async_init(entry.entry_id)
+                options=await hass.config_entries.options.async_configure(options['flow_id'],{'next_step_id':'select_remote'})
+                options=await hass.config_entries.options.async_configure(options['flow_id'],{'remote':'main'})
+                options=await hass.config_entries.options.async_configure(options['flow_id'],{'name':'Living room','button_count':count})
+                await hass.async_block_till_done()
+                controller=hass.data['irtrans']['entries'][entry.entry_id]
+                assert controller.slots['2']['label']=='TV mute'
+                assert controller.slot_learned(2)
+                assert controller.slot_learned(1001)
+            assert registry.async_get_entity_id('text','irtrans',f'{entry.entry_id}-slot-2-name')==name
+            assert hass.states.get(name).state=='TV mute'
+            # Output settings must preserve both remote definitions.
+            options=await hass.config_entries.options.async_init(entry.entry_id)
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'next_step_id':'output'})
+            options=await hass.config_entries.options.async_configure(options['flow_id'],{'led':'both'})
+            await hass.async_block_till_done()
+            controller=hass.data['irtrans']['entries'][entry.entry_id]
+            assert len(controller.groups)==2
+            assert entry.options['led']=='both'
+            print('Multiple remote devices, rename/resize, independent code bindings and stable IDs: OK')
             from custom_components.irtrans.logbook import async_describe_events
             descriptions={}
             async_describe_events(hass,lambda domain,event,callback:descriptions.update({event:callback}))

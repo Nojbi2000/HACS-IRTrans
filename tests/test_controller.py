@@ -58,6 +58,30 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.controller.close()
 
+    async def test_remote_groups_preserve_hidden_slots_and_separate_code_keys(self):
+        await self.controller.rename_slot(2, 'Original mute')
+        await self.controller.learn('buttons', ['button_02'])
+        saved = deepcopy(self.controller.store.saved)
+        self.entry.options = {'remotes': [
+            {'id': 'main', 'name': 'TV', 'base': 0, 'button_count': 1},
+            {'id': 'amp', 'name': 'Amplifier', 'base': 1000, 'button_count': 4}]}
+        other = c.Controller(self.hass, self.entry, '127.0.0.1')
+        other.store.saved = saved
+        await other.load()
+        self.assertNotIn(2, other.slot_indices)
+        self.assertEqual(other.slots['2']['label'], 'Original mute')
+        self.assertTrue(other.slot_learned(2))
+        self.assertEqual(other.slots['1001']['device'], 'remote_amp')
+        self.assertEqual(other.default_slot(1)['device'], 'buttons')
+        await other.rename_slot(1001, 'Amp power')
+        self.entry.options['remotes'][0]['button_count'] = 12
+        restored = c.Controller(self.hass, self.entry, '127.0.0.1')
+        restored.store.saved = deepcopy(other.store.saved)
+        await restored.load()
+        self.assertIn(2, restored.slot_indices)
+        self.assertEqual(restored.slots['1001']['label'], 'Amp power')
+        self.assertTrue(restored.slot_learned(2))
+
     async def test_learning_persists_and_reload_restores_codes(self):
         await self.controller.learn('tv',['power'])
         saved=deepcopy(self.controller.codes)

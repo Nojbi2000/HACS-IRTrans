@@ -1,4 +1,5 @@
 """Shared device information and push updates."""
+from homeassistant.helpers import device_registry
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import DOMAIN
 
@@ -17,6 +18,14 @@ class IRTransEntity:
 
     @property
     def device_info(self):
+        if hasattr(self, "remote_group"):
+            return {
+                "identifiers": {(DOMAIN, f"{self.controller.entry.entry_id}-remote-{self.remote_group['id']}")},
+                "name": self.remote_group["name"], "manufacturer": "IRTrans GmbH",
+                "model": "IR remote (codes stored in HA)",
+                "via_device_id": device_registry.async_get(self.controller.hass).async_get_device(
+                    identifiers={(DOMAIN, self.controller.entry.entry_id)}).id,
+            }
         version = self.controller.version
         return {
             "identifiers": {(DOMAIN, self.controller.entry.entry_id)},

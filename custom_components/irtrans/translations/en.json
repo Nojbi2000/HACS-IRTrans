@@ -21,12 +21,44 @@
   "options": {
     "step": {
       "init": {
-        "title": "IR output and command buttons",
+        "title": "IRTrans remotes",
+        "menu_options": {
+          "add_remote": "Add remote",
+          "select_remote": "Edit remote / add buttons",
+          "output": "IR LED output"
+        }
+      },
+      "add_remote": {
+        "title": "Add remote",
+        "description": "Create a separate remote device with named command positions. Each position has Name, Learn and Send controls.",
         "data": {
-          "led": "IR LED output",
-          "button_count": "Number of command positions (1\u201332)"
+          "name": "Remote name",
+          "button_count": "Number of buttons (1–32)"
+        }
+      },
+      "select_remote": {
+        "title": "Choose remote",
+        "data": {
+          "remote": "Remote"
+        }
+      },
+      "edit_remote": {
+        "title": "Edit remote",
+        "description": "Increase the number to add buttons. Reducing it hides extra positions; saved codes and names remain available when increased again.",
+        "data": {
+          "name": "Remote name",
+          "button_count": "Number of buttons (1–32)"
+        }
+      },
+      "output": {
+        "title": "IR LED output",
+        "data": {
+          "led": "IR LED output"
         }
       }
+    },
+    "error": {
+      "invalid_name": "Enter a name of 1–100 characters."
     }
   }
 }

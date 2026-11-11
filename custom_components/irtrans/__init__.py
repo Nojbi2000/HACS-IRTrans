@@ -8,6 +8,8 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry
+from .entity import IRTransEntity
 from homeassistant.helpers.event import async_track_time_interval
 
 from .binary import ProtocolError, ReceiveHub, resolve_ipv4
@@ -46,6 +48,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 raise ProtocolError("All IRTrans entries must use the same receive port")
             state["entries"][entry.entry_id] = controller
             state["hub"].handlers[ip] = controller.receive
+            device_registry.async_get(hass).async_get_or_create(
+                config_entry_id=entry.entry_id, **IRTransEntity(controller).device_info
+            )
             stage = "setting up HA entities"
             await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         except (Exception, asyncio.CancelledError) as exc:

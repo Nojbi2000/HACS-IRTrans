@@ -16,6 +16,7 @@ from homeassistant.helpers.storage import Store
 
 from .binary import BinaryClient, IRCode, ProtocolError, received_code
 from .const import DOMAIN, STORAGE_VERSION
+from .groups import remote_groups
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,18 +61,30 @@ class Controller:
         self.receive_log_entity_id = None
         self.receive_log = deque(maxlen=100)
         self.receive_log_count = 0
-        self.slot_count = max(1, min(32, int(entry.options.get("button_count", 8))))
+        self.groups = remote_groups(entry.options)
+        self.slot_indices = [group["base"] + number for group in self.groups
+                             for number in range(1, group["button_count"] + 1)]
+        self.slot_count = len(self.slot_indices)
         self.slots = {str(index): self.default_slot(index)
-                      for index in range(1, self.slot_count + 1)}
+                      for index in self.slot_indices}
         self._lock = asyncio.Lock()
         self._tasks: set[asyncio.Task] = set()
         self._closing = False
         self._unsubscribe = None
 
-    @staticmethod
-    def default_slot(index):
-        return {"label": f"Button {index:02d}", "device": "buttons",
-                "command": f"button_{index:02d}"}
+    def group_for_slot(self, index):
+        base = ((index - 1) // 1000) * 1000
+        return next(group for group in self.groups if group["base"] == base)
+
+    def slot_number(self, index):
+        return (index - 1) % 1000 + 1
+
+    def default_slot(self, index):
+        group = self.group_for_slot(index)
+        number = self.slot_number(index)
+        device = "buttons" if group["id"] == "main" else f"remote_{group['id']}"
+        return {"label": f"Button {number:02d}", "device": device,
+                "command": f"button_{number:02d}"}
 
     def slot_learned(self, index):
         slot = self.slots[str(index)]
@@ -90,7 +103,7 @@ class Controller:
             for command in commands:
                 if (device, command) in bound:
                     continue
-                for index in range(1, self.slot_count + 1):
+                for index in self.slot_indices:
                     slot = slots[str(index)]
                     if (slot == self.default_slot(index)
                             and slot["command"] not in codes.get(slot["device"], {})):
@@ -146,7 +159,7 @@ class Controller:
             if not isinstance(stored["slots"], dict):
                 raise ProtocolError("Invalid saved button positions")
             for key, slot in stored["slots"].items():
-                if (not key.isdecimal() or not 1 <= int(key) <= 32
+                if (not key.isdecimal() or not 1 <= int(key) <= 1000032
                         or not isinstance(slot, dict)
                         or not isinstance(slot.get("label"), str)
                         or not 1 <= len(slot["label"].strip()) <= 100):

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0
+
+- Add independently named remotes, each shown as a child device with 1–32 command positions.
+- Add Configure menus for adding, renaming and resizing remotes and selecting LED output.
+- Move existing positions into Remote 01 while preserving unique IDs and stored codes.
+- Preserve hidden positions and names when reducing button counts.
+- Use current HA device relationships via via_device_id.
+
 ## 2.1.1
 
 - Log every received device datagram, including unknown, repeated and invalid data, in Activity.

@@ -9,7 +9,7 @@ from .entity import IRTransEntity
 async def async_setup_entry(hass, entry, async_add_entities):
     controller = hass.data[DOMAIN]["entries"][entry.entry_id]
     async_add_entities([IRTransButtonName(controller, index)
-                        for index in range(1, controller.slot_count + 1)])
+                        for index in controller.slot_indices])
 
 
 class IRTransButtonName(IRTransEntity, TextEntity):
@@ -21,8 +21,10 @@ class IRTransButtonName(IRTransEntity, TextEntity):
     def __init__(self, controller, index):
         super().__init__(controller)
         self.index = index
+        self.remote_group = controller.group_for_slot(index)
+        self.number = controller.slot_number(index)
         self._attr_unique_id = f"{controller.entry.entry_id}-slot-{index}-name"
-        self._attr_name = f"{index:02d} Name"
+        self._attr_name = f"{self.number:02d} Name"
 
     @property
     def available(self):

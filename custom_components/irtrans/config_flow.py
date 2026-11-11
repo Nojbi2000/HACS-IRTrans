@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import voluptuous as vol
+from uuid import uuid4
+from .groups import remote_groups
 from homeassistant import config_entries
 from homeassistant.core import callback
 from .binary import BinaryClient, ProtocolError, resolve_ipv4
@@ -46,11 +48,59 @@ class IRTransFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
 class IRTransOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
+        return self.async_show_menu(step_id="init", menu_options=["add_remote", "select_remote", "output"])
+
+    def save_groups(self, groups):
+        return self.async_create_entry(title="", data={**self.config_entry.options, "remotes": groups})
+
+    async def async_step_add_remote(self, user_input=None):
+        groups = remote_groups(self.config_entry.options)
+        errors = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-        return self.async_show_form(step_id="init", data_schema=vol.Schema({
+            name = user_input["name"].strip()
+            if not name or len(name) > 100:
+                errors["name"] = "invalid_name"
+            else:
+                groups.append({"id": uuid4().hex, "name": name,
+                               "base": max(group["base"] for group in groups) + 1000,
+                               "button_count": user_input["button_count"]})
+                return self.save_groups(groups)
+        return self.remote_form("add_remote", user_input or {
+            "name": f"Remote {len(groups) + 1:02d}", "button_count": 8}, errors)
+
+    async def async_step_select_remote(self, user_input=None):
+        groups = remote_groups(self.config_entry.options)
+        if user_input is not None:
+            self.selected_remote = user_input["remote"]
+            return await self.async_step_edit_remote()
+        return self.async_show_form(step_id="select_remote", data_schema=vol.Schema({
+            vol.Required("remote"): vol.In({group["id"]: group["name"] for group in groups}),
+        }))
+
+    async def async_step_edit_remote(self, user_input=None):
+        groups = remote_groups(self.config_entry.options)
+        group = next(group for group in groups if group["id"] == self.selected_remote)
+        errors = {}
+        if user_input is not None:
+            name = user_input["name"].strip()
+            if not name or len(name) > 100:
+                errors["name"] = "invalid_name"
+            else:
+                group.update(name=name, button_count=user_input["button_count"])
+                return self.save_groups(groups)
+        return self.remote_form("edit_remote", user_input or group, errors)
+
+    def remote_form(self, step, defaults, errors):
+        return self.async_show_form(step_id=step, data_schema=vol.Schema({
+            vol.Required("name", default=defaults["name"]): str,
+            vol.Required("button_count", default=defaults["button_count"]):
+                vol.All(vol.Coerce(int), vol.Range(min=1, max=32)),
+        }), errors=errors)
+
+    async def async_step_output(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
+        return self.async_show_form(step_id="output", data_schema=vol.Schema({
             vol.Required("led", default=self.config_entry.options.get("led", "default")):
                 vol.In(["default", "internal", "external", "both"]),
-            vol.Required("button_count", default=self.config_entry.options.get("button_count", 8)):
-                vol.All(vol.Coerce(int), vol.Range(min=1, max=32)),
         }))

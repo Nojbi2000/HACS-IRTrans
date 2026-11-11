@@ -1,3 +1,16 @@
+IRTrans Direct 2.2.0 – multiple remote devices, 2026-11-11
+
+40 protocol/controller tests pass. The full real-HA 2026.11.1 test also passes
+with external networking disabled and simulated TCP IR hardware/UDP reception.
+Verified adding a second child device with independent command bindings,
+renaming/resizing the original group, learning into the second group, retaining
+both groups and existing entity IDs after reload, hiding/restoring a learned
+position, and changing LED options without losing remote definitions.
+The original main position IDs and command keys remain unchanged.
+No physical IR learning or transmission was performed for this update.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.1.1 – live receive monitoring, 2026-11-11
 
 Added a bounded 100-packet receive buffer and a Receive log sensor with 20

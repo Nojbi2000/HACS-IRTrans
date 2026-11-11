@@ -1,4 +1,4 @@
-IRTrans Direct 2.1.1 – Home Assistant, přímo bez irserver
+IRTrans Direct 2.2.0 – Home Assistant, přímo bez irserver
 =====================================================
 Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
 
@@ -12,7 +12,7 @@ CO TATO VERZE DĚLÁ
 - Nepotřebuje irserver, další počítač ani hardwarovou databázi IRDB.
 
 Jde o vlastní novou implementaci pro přímý protokol, ne o oficiální release
-původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.0.2.
+původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.2.0.
 Kódy z ayControl se automaticky neimportují; naučíte je znovu v HA.
 
 INSTALACE / VÝMĚNA PŮVODNÍ INTEGRACE
@@ -75,9 +75,19 @@ i když stránku zrovna nemáte otevřenou. Vypnutí Remote pozastaví příjem 
 Během učení se příjmy logují, ale nespouštějí pojmenované automatizační události.
 Log neznamená automatické naučení: pro uložení vysílatelného povelu slouží Learn.
 
-TLAČÍTKA PŘÍMO NA STRÁNCE ZAŘÍZENÍ (2.1.0)
+OVLADAČE A TLAČÍTKA (2.2.0)
 
-Otevřete stránku zařízení IRTrans. Ve výchozím stavu je připravených osm pozic.
+V HACS aktualizujte IRTrans Direct na 2.2.0 a restartujte Home Assistant.
+Integraci neodstraňujte; naučené kódy a existující ID entit zůstanou zachované.
+
+Settings -> Devices & services -> IRTrans Direct -> Configure:
+- Add remote: zadejte vlastní název (např. Televize) a počet tlačítek 1–32.
+- Edit remote / add buttons: vyberte ovladač, změňte název nebo zvyšte počet.
+- IR LED output: nastavení vysílacích LED.
+
+Každý ovladač se zobrazí jako samostatné zařízení pod IRTrans Direct.
+Dosavadních osm pozic najdete pod Remote 01; tento ovladač lze přejmenovat.
+Otevřete stránku požadovaného ovladače.
 U každé pozice nastavte název přes pole například 01 Name, stiskněte 01 Learn
 s vaším názvem a krátce stiskněte tlačítko původního ovladače. Po úspěšném
 naučení se zpřístupní odpovídající 01 Send. Zpráva not learned znamená, že pozice
@@ -85,8 +95,8 @@ ještě nemá uložený kód. Vše funguje bez psaní YAML.
 
 Pole Name mění pouze popisek; uložený kód a jeho klíče pro automatizace zůstanou
 zachované. Dříve uložené povely se při přechodu nabídnou ve volných pozicích.
-Počet pozic lze nastavit na 1–32 přes Configure / Options -> Number of command
-positions. Snížení počtu pozic kódy nesmaže.
+Každý ovladač může mít 1–32 pozic. Snížení počtu pozic skryje nadbytečná
+tlačítka; jejich kódy a názvy zůstanou uložené a po opětovném zvýšení se vrátí.
 
 Senzory Last received command a Last sent command ukazují pojmenovaný příjem
 a vysílání. Po rozkliknutí jsou dostupné čas a klíče povelu; u vysílání také zdroj
@@ -141,7 +151,7 @@ Seznam command může obsahovat sekvenci několika uložených povelů.
 Přijaté potvrzení znamená, že IRTrans přijal/provedl požadavek; nepotvrzuje,
 že povel skutečně zachytila televize. Při chybě se akce ukončí chybou.
 
-Výstup LED se vybírá přes Configure / Options u integrace: default, internal,
+Výstup LED se vybírá přes Configure -> IR LED output u integrace: default, internal,
 external nebo both. Výchozí je default podle zařízení. Volba číselných výstupů
 1–8 není v této verzi implementována.
 

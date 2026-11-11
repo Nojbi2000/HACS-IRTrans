@@ -9,7 +9,7 @@ from .entity import IRTransEntity
 async def async_setup_entry(hass, entry, async_add_entities):
     controller = hass.data[DOMAIN]["entries"][entry.entry_id]
     async_add_entities([IRTransCommandButton(controller, index, action)
-                        for index in range(1, controller.slot_count + 1)
+                        for index in controller.slot_indices
                         for action in ("learn", "send")])
 
 
@@ -17,6 +17,8 @@ class IRTransCommandButton(IRTransEntity, ButtonEntity):
     def __init__(self, controller, index, action):
         super().__init__(controller)
         self.index, self.action = index, action
+        self.remote_group = controller.group_for_slot(index)
+        self.number = controller.slot_number(index)
         self._attr_unique_id = f"{controller.entry.entry_id}-slot-{index}-{action}"
         self._attr_icon = "mdi:remote" if action == "send" else "mdi:record-rec"
 
@@ -24,7 +26,7 @@ class IRTransCommandButton(IRTransEntity, ButtonEntity):
     def name(self):
         label = self.controller.slots[str(self.index)]["label"]
         suffix = " (not learned)" if self.action == "send" and not self.controller.slot_learned(self.index) else ""
-        return f"{self.index:02d} {self.action.capitalize()} · {label}{suffix}"
+        return f"{self.number:02d} {self.action.capitalize()} · {label}{suffix}"
 
     @property
     def available(self):
@@ -45,7 +47,7 @@ class IRTransCommandButton(IRTransEntity, ButtonEntity):
             else:
                 await self.controller.send(
                     slot["device"], [slot["command"]], context=self._context,
-                    source=f"Button {self.index:02d}",
+                    source=f"{self.remote_group['name']} / Button {self.number:02d}",
                     led=self.controller.entry.options.get("led", "default"),
                 )
         except (ValueError, OSError, TimeoutError, ProtocolError) as exc:

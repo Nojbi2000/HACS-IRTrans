@@ -21,15 +21,17 @@ This project uses the integration domain `irtrans`. Install only one integration
 
 For manual installation, copy only `custom_components/irtrans` to `/config/custom_components/irtrans` and restart HA.
 
-## Command buttons on the device page (2.1.0)
+## Remotes and command buttons (2.2.0)
 
-Open the IRTrans device page under **Settings → Devices & services**. There are eight command positions by default. Each position has:
+Open **Settings → Devices & services → IRTrans Direct → Configure**. Choose **Add remote** to create a remote with its own name and 1–32 buttons. Choose **Edit remote / add buttons** to rename it or change its button count. Each remote appears as a separate child device. The original eight positions become **Remote 01**, keeping existing entity IDs and stored codes.
+
+Open the remote device page. Each position has:
 
 - **01 Name**: edit the display name, for example `TV power`.
 - **01 Learn · TV power**: press, then briefly press the original remote button when prompted.
 - **01 Send · TV power**: transmit the saved code. Send is unavailable and marked `(not learned)` until a code is saved.
 
-Names and codes survive reloads/restarts. Renaming a position does not change the code or its stable automation keys. Existing saved codes are assigned to unused positions on upgrade. The **Configure / Options → Number of command positions** setting allows 1–32 positions; reducing the visible count does not delete stored codes.
+Names and codes survive reloads/restarts. Renaming a position does not change the code or its stable automation keys. Existing saved codes are assigned to unused positions on upgrade. Each remote supports 1–32 visible positions; reducing the count hides extra positions without deleting stored codes or names. Increasing it again restores them. Groups and code bindings have stable identifiers independent of display names.
 
 **Last received command** and **Last sent command** show the named codes. Their details include the time, command keys, and, for outgoing commands, whether the request came from a numbered button or an HA action. With HA's Activity/Logbook enabled, named receptions and transmissions are described there; outgoing events retain HA's actor context when available.
 

@@ -1,3 +1,35 @@
+IRTrans Direct 2.3.2 – three samples and contextual hold recognition, 2026-11-12
+
+60 protocol/controller tests pass. Real HA 2026.11.1 smoke passes against simulated
+TCP hardware and UDP reception with outside networking disabled. Added tests
+cover three short captures, three optional held captures, variant persistence,
+inconsistent captures preserving earlier records, context-free repeat rejection,
+expiry, command separation, timing-table variants for short repeats and observed
+Apple-address held payload variants. Real-HA checks verify first main press then
+short repeat, the observed held variant, sample counters and diagnostic summaries.
+The test-only release pause is accelerated; production prompts wait two seconds.
+
+Original supplied 2.3.0 diagnostic buffer was replayed in chronological order
+with its original timestamps, using Menu/Play reference frames from that buffer.
+Result: 86 known, 8 unknown, 6 non-command packets; 36 repeat-marked records.
+51 previously unknown records were matched (33 Play, 18 Menu). Remaining isolated
+repeats/noise were not assigned speculative button identities. This is a replay
+of a prior capture, not a new physical hardware test or proof of every remote.
+Raw user diagnostics are not committed; public regression payloads are synthetic.
+
+The three short samples must compare equal after existing normalization. Held
+sample payloads must agree, allowing the observed main/held Apple-address pair.
+Every original native capture is retained; sending remains on the existing
+main/repeat path without speculative byte or timing rewriting. Receiving the
+supported contextual short repeat does not require separate repeat learning;
+sending Hold still requires an explicitly learned repeat capture.
+
+Diagnostics now expose learned signal summaries (symbols, timing pairs, payload
+and sample counts) so future downloads can distinguish capture problems from
+receive matching. They do not copy complete native replay packet records.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.3.1 – first-press recognition, 2026-11-12
 
 52 protocol/controller tests pass. The added regression cases exercise a short

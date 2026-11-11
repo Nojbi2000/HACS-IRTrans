@@ -8,7 +8,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock
 
-from test_binary import code, distance_code
+from test_binary import code, distance_code, short_repeat, apple_hold_variant
 
 ROOT=Path(__file__).resolve().parents[1]
 package=types.ModuleType('direct_test_package')
@@ -47,6 +47,7 @@ c=importlib.import_module('direct_test_package.controller')
 
 class ControllerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        c._SAMPLE_RELEASE_SECONDS = 0
         self.events=[]
         self.hass=types.SimpleNamespace(bus=types.SimpleNamespace(
             async_fire=lambda name,data,**kwargs:self.events.append((name,data))))
@@ -141,6 +142,77 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.controller.last_received['is_repeat'])
         self.assertEqual(self.controller.receive_log[0]['kind'],'known')
         self.assertEqual(self.events[-1][0],'irtrans_event')
+
+    async def test_three_short_samples_match_before_commit(self):
+        self.controller.client.learn.side_effect=[c.IRCode.parse(frame.packet) for frame in (
+            distance_code(repeat=True),distance_code(),distance_code(reindex=True,split=True))]
+        await self.controller.learn('tv',['menu'])
+        record=self.controller.codes['tv']['menu']
+        self.assertEqual(record['sample_count'],3)
+        self.assertEqual(len(record['variants']),3)
+        self.assertEqual(self.controller.client.learn.await_count,3)
+        self.assertEqual(len(c.IRCode.from_hex(record['hex']).data),34)
+
+    async def test_inconsistent_short_samples_preserve_old_record(self):
+        await self.controller.learn('tv',['menu'])
+        saved=deepcopy(self.controller.codes)
+        self.controller.client.learn.side_effect=[c.IRCode.parse(frame.packet) for frame in (
+            distance_code(),distance_code(),distance_code(bytes.fromhex('aa5504a5')))]
+        with self.assertRaises(c.ProtocolError):
+            await self.controller.learn('tv',['menu'])
+        self.assertEqual(self.controller.codes,saved)
+
+    async def test_three_repeat_samples_commit_variants_atomically(self):
+        await self.controller.learn('tv',['menu'])
+        self.controller.client.learn.reset_mock()
+        self.controller.client.learn.side_effect=[c.IRCode.parse(frame.packet) for frame in (
+            short_repeat(),short_repeat(start=False),short_repeat())]
+        await self.controller.learn_repeat('tv','menu')
+        record=self.controller.codes['tv']['menu']
+        self.assertEqual(record['repeat_sample_count'],3)
+        self.assertEqual(len(record['repeat_variants']),2)
+        self.assertEqual(self.controller.client.learn.await_count,3)
+        await self.controller.load()
+        self.assertEqual(self.controller.codes['tv']['menu'],record)
+
+    async def test_inconsistent_repeat_samples_preserve_old_record(self):
+        self.controller.client.learn.return_value=c.IRCode.parse(distance_code().packet)
+        await self.controller.learn('tv',['menu'])
+        saved=deepcopy(self.controller.codes)
+        self.controller.client.learn.side_effect=[c.IRCode.parse(frame.packet) for frame in (
+            distance_code(),distance_code(bytes.fromhex('aa5504a5')),short_repeat())]
+        with self.assertRaises(c.ProtocolError):
+            await self.controller.learn_repeat('tv','menu')
+        self.assertEqual(self.controller.codes,saved)
+
+    async def test_physical_hold_variant_follows_only_matching_recent_press(self):
+        self.controller.client.learn.return_value=c.IRCode.parse(distance_code(bytes.fromhex('ee8702a5')).packet)
+        await self.controller.learn('tv',['menu'])
+        held=bytes((230,))+apple_hold_variant().packet
+        self.controller.receive(held)
+        self.assertFalse(self.controller.last_received['matched'])
+        self.controller.receive(bytes((230,))+distance_code(bytes.fromhex('ee8702a5')).packet)
+        self.controller.receive(held)
+        self.assertEqual(self.controller.last_received['command'],'menu')
+        self.assertTrue(self.controller.last_received['is_repeat'])
+        self.assertEqual(self.controller.last_received['repeat_count'],1)
+        self.controller.receive(bytes((230,))+apple_hold_variant(command=4).packet)
+        self.assertFalse(self.controller.last_received['matched'])
+        self.controller.receive(held)
+        self.assertFalse(self.controller.last_received['matched'])
+
+    async def test_short_repeat_can_follow_main_without_optional_repeat_learning(self):
+        self.controller.client.learn.return_value=c.IRCode.parse(distance_code().packet)
+        await self.controller.learn('tv',['menu'])
+        self.controller.receive(bytes((230,))+short_repeat().packet)
+        self.assertFalse(self.controller.last_received['matched'])
+        self.controller.receive(bytes((230,))+distance_code().packet)
+        self.controller.receive(bytes((230,))+short_repeat(start=False).packet)
+        self.assertEqual(self.controller.last_received['command'],'menu')
+        self.assertTrue(self.controller.last_received['is_repeat'])
+        self.controller._receive_chain=(c.time.monotonic()-1,[('tv','menu')],1)
+        self.controller.receive(bytes((230,))+short_repeat().packet)
+        self.assertFalse(self.controller.last_received['matched'])
 
     async def test_learning_persists_and_reload_restores_codes(self):
         await self.controller.learn('tv',['power'])

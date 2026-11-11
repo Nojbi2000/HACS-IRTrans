@@ -50,6 +50,27 @@ def distance_code(payload=bytes.fromhex('aa5502a5'), *, repeat=False, reindex=Fa
     return b.IRCode.parse(b.checksum(packet))
 
 
+def short_repeat(*, start=True):
+    original=distance_code(repeat=True)
+    packet=bytearray(original.packet[:44])
+    packet[0],packet[6]=46,2
+    if start:
+        packet[9:13]=struct.pack('<hh',280,68)
+        packet[25:29]=struct.pack('<hh',1150,79)
+        packet[41]=2
+        symbols=b'S0'
+    else:
+        packet[8]=0
+        symbols=b'31'
+    return b.IRCode.parse(b.checksum(packet+symbols))
+
+
+def apple_hold_variant(command=2):
+    packet=bytearray(distance_code(bytes((0xee,0x87,command,command^255)),repeat=True).packet)
+    struct.pack_into('<h',packet,15,21)  # observed suffix header space of 168 us
+    return b.IRCode.parse(b.checksum(packet))
+
+
 def version():
     packet = bytearray(78)
     packet[:2] = bytes((231, 77))
@@ -137,6 +158,18 @@ class CodecTests(unittest.TestCase):
         bad=bytearray(original.packet)
         bad[7]=56
         self.assertIsNone(b.IRCode.parse(b.checksum(bad)).main_frame())
+
+    def test_short_repeat_matches_timing_table_variants(self):
+        self.assertTrue(short_repeat().is_short_repeat())
+        self.assertTrue(short_repeat(start=False).is_short_repeat())
+        self.assertTrue(short_repeat().matches(short_repeat(start=False)))
+        self.assertFalse(code(data=b'S0').is_short_repeat())
+
+    def test_observed_hold_variant_retains_all_payload_bits(self):
+        variant=apple_hold_variant()
+        self.assertEqual(variant.pulse_distance_payload(),bytes.fromhex('ee8702fd'))
+        self.assertIsNone(variant.main_frame())
+        self.assertFalse(distance_code(bytes.fromhex('ee8702a5')).matches(variant))
 
     def test_c_reference_vectors(self):
         lines = (ROOT / 'tests/reference-frames.txt').read_text().splitlines()

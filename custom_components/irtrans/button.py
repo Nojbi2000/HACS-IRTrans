@@ -43,7 +43,11 @@ class IRTransCommandButton(IRTransEntity, ButtonEntity):
         return {"slot": self.index, "action": self.action,
                 **self.controller.slots[str(self.index)],
                 "learned": self.controller.slot_learned(self.index),
-                "repeat_learned": self.controller.slot_repeat_learned(self.index)}
+                "repeat_learned": self.controller.slot_repeat_learned(self.index),
+                "short_samples": self.controller.codes.get(self.controller.slots[str(self.index)]["device"], {}).get(
+                    self.controller.slots[str(self.index)]["command"], {}).get("sample_count", 0),
+                "repeat_samples": self.controller.codes.get(self.controller.slots[str(self.index)]["device"], {}).get(
+                    self.controller.slots[str(self.index)]["command"], {}).get("repeat_sample_count", 0)}
 
     async def async_press(self):
         slot = dict(self.controller.slots[str(self.index)])

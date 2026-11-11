@@ -14,7 +14,7 @@ import tempfile
 from types import MappingProxyType
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from test_binary import FakeTCPDevice, code, distance_code
+from test_binary import FakeTCPDevice, code, distance_code, short_repeat, apple_hold_variant
 
 from homeassistant import bootstrap, loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntries
@@ -54,6 +54,8 @@ async def main():
             })
             assert flow["type"] == "create_entry", flow
             entry = flow["result"]
+            from custom_components.irtrans import controller as controller_module
+            controller_module._SAMPLE_RELEASE_SECONDS = .02
             await hass.async_block_till_done()
             assert entry.state.value == "loaded", entry.state
             print('Config flow and integration setup:',entry.state)
@@ -260,6 +262,28 @@ async def main():
             assert not controller.last_received['is_repeat']
             assert events[-1]['button']=='first_press'
             print('First press without repeat suffix and with reindexed timing table: OK')
+            assert controller.codes['tv']['first_press']['sample_count']==3
+            transport.sendto(bytes((230,))+short_repeat().packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            await hass.async_block_till_done()
+            assert controller.last_received['command']=='first_press'
+            assert controller.last_received['is_repeat']
+            fake.reply=distance_code(bytes.fromhex('ee8702a5'))
+            await hass.services.async_call('remote','learn_command',{'entity_id':remote,
+                'device':'tv','command':['apple_menu'],'timeout':5},blocking=True)
+            transport.sendto(bytes((230,))+fake.reply.packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            transport.sendto(bytes((230,))+apple_hold_variant().packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            await hass.async_block_till_done()
+            assert controller.last_received['command']=='apple_menu'
+            assert controller.last_received['is_repeat']
+            diagnostic=await async_get_config_entry_diagnostics(hass,entry)
+            learned=next(item for item in diagnostic['learned_signals'] if item['command']=='button_02')
+            assert learned['repeat_samples']==3
+            assert learned['repeat'] is not None
+            print('Three-sample learning, contextual physical hold variants, short repeats and signal diagnostics: OK')
+
 
             assert await hass.config_entries.async_unload(entry.entry_id)
             assert hass.data['irtrans']['hub'] is None

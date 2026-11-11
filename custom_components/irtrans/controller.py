@@ -20,6 +20,7 @@ from .const import DOMAIN, STORAGE_VERSION
 from .groups import remote_groups
 
 _LOGGER = logging.getLogger(__name__)
+_SAMPLE_RELEASE_SECONDS = 2
 
 
 def names(value: Iterable[str], *, unique: bool = False) -> list[str]:
@@ -156,8 +157,20 @@ class Controller:
                 if not isinstance(record, dict) or not isinstance(record.get("hex"), str):
                     raise ProtocolError("Invalid saved IRTrans code record")
                 IRCode.from_hex(record["hex"]).signature()
+                if "variants" in record:
+                    variants = record["variants"]
+                    if not isinstance(variants, list) or not 1 <= len(variants) <= 3:
+                        raise ProtocolError("Invalid saved short-press variants")
+                    for value in variants:
+                        IRCode.from_hex(value).signature()
                 if "repeat_hex" in record:
                     IRCode.from_hex(record["repeat_hex"]).signature()
+                if "repeat_variants" in record:
+                    variants = record["repeat_variants"]
+                    if not isinstance(variants, list) or not 1 <= len(variants) <= 3:
+                        raise ProtocolError("Invalid saved repeat variants")
+                    for value in variants:
+                        IRCode.from_hex(value).signature()
         self.codes = stored["codes"]
         if "slots" in stored:
             if not isinstance(stored["slots"], dict):
@@ -224,15 +237,30 @@ class Controller:
             updated = deepcopy(self.codes)
             try:
                 for command in commands:
-                    persistent_notification.async_create(
-                        self.hass,
-                        f"Point the original remote at IRTrans and briefly press **{self.command_info(device, command)['label']}** "
-                        f"for **{device}**. Waiting up to {timeout} seconds.",
-                        title="IRTrans: learn command", notification_id=self.notification_id,
-                    )
-                    code = await self.client.learn(raw=raw, timeout=timeout)
+                    samples = []
+                    for sample in range(1, 4):
+                        if sample > 1:
+                            persistent_notification.async_create(
+                                self.hass, "Release the original remote button. "
+                                "The next sample starts in 2 seconds.",
+                                title=f"IRTrans: short sample {sample}/3", notification_id=self.notification_id,
+                            )
+                            await asyncio.sleep(_SAMPLE_RELEASE_SECONDS)
+                        persistent_notification.async_create(
+                            self.hass,
+                            f"Sample **{sample}/3**: briefly press **{self.command_info(device, command)['label']}** "
+                            f"on the original remote, then release it. Waiting up to {timeout} seconds.",
+                            title="IRTrans: learn short press", notification_id=self.notification_id,
+                        )
+                        samples.append(await self.client.learn(raw=raw, timeout=timeout))
+                    if any(not samples[0].matches(code) for code in samples[1:]):
+                        raise ProtocolError("The three short-press samples disagree; learn the same button again")
+                    # Prefer a shorter valid capture over an appended repeat.
+                    preferred = min(samples, key=lambda code: len(code.data))
                     updated.setdefault(device, {})[command] = {
-                        "hex": code.packet.hex(),
+                        "hex": preferred.packet.hex(),
+                        "variants": list(dict.fromkeys(code.packet.hex() for code in samples)),
+                        "sample_count": 3,
                         "learned_at": datetime.now(timezone.utc).isoformat(),
                         "raw": raw,
                     }
@@ -257,17 +285,46 @@ class Controller:
             self.learning = True
             self.notify()
             try:
-                persistent_notification.async_create(
-                    self.hass,
-                    f"Hold **{self.command_info(device, command)['label']}** on the original "
-                    "remote for 2–3 seconds to learn its repeat code.",
-                    title="IRTrans: learn repeat", notification_id=self.notification_id,
-                )
                 record = self.codes[device][command]
-                code = await self.client.learn(raw=record.get("raw", False), timeout=timeout, repeat=True)
+                initial = IRCode.from_hex(record["hex"])
+                samples = []
+                for sample in range(1, 4):
+                    if sample > 1:
+                        persistent_notification.async_create(
+                            self.hass, "Release the original remote button now. "
+                            "The next sample starts in 2 seconds.",
+                            title=f"IRTrans: repeat sample {sample}/3", notification_id=self.notification_id,
+                        )
+                        await asyncio.sleep(_SAMPLE_RELEASE_SECONDS)
+                    persistent_notification.async_create(
+                        self.hass,
+                        f"Sample **{sample}/3**: hold **{self.command_info(device, command)['label']}** "
+                        "on the original remote for 2–3 seconds. Release it when this message changes.",
+                        title="IRTrans: learn repeat", notification_id=self.notification_id,
+                    )
+                    code = await self.client.learn(raw=record.get("raw", False), timeout=timeout, repeat=True)
+                    if (initial.main_frame() is not None and not code.is_short_repeat()
+                            and code.pulse_distance_payload() is None):
+                        raise ProtocolError("Repeat sample does not contain a recognizable frame; "
+                                            "release the button and try Learn repeat again")
+                    samples.append(code)
+                payloads = {code.pulse_distance_payload() for code in samples
+                            if code.pulse_distance_payload() is not None}
+                if len(payloads) > 1:
+                    main = initial.main_frame()
+                    allowed = {main} if main is not None else set()
+                    if main is not None and main[:2] == b"\xee\x87":
+                        allowed.add(main[:3] + bytes((main[2] ^ 255,)))
+                    if not payloads <= allowed:
+                        raise ProtocolError("The three repeat samples disagree; repeat learning with the same button")
                 updated = deepcopy(self.codes)
+                # Prefer an isolated repeat when firmware supplied one. Preserve
+                # all captures atomically so differing valid representations match.
+                preferred = next((code for code in samples if code.is_short_repeat()), samples[0])
                 updated[device][command].update(
-                    repeat_hex=code.packet.hex(),
+                    repeat_hex=preferred.packet.hex(),
+                    repeat_variants=list(dict.fromkeys(code.packet.hex() for code in samples)),
+                    repeat_sample_count=3,
                     repeat_learned_at=datetime.now(timezone.utc).isoformat(),
                 )
                 await self.save_library(updated)
@@ -379,6 +436,37 @@ class Controller:
             "during_learning": self.learning, "is_repeat": is_repeat, "repeat_count": repeat_count,
         })
 
+    def _repeat_matches(self, device, command, received):
+        """Only called for commands in the current, recent receive chain."""
+        record = self.codes.get(device, {}).get(command)
+        if record is None:
+            return False
+        initial = IRCode.from_hex(record["hex"])
+        main = initial.main_frame()
+        if received.is_short_repeat() and main is not None:
+            return True
+        payload = received.pulse_distance_payload()
+        if main is not None and payload is not None:
+            if payload == main:
+                return True
+            # Observed Apple-address hold variants keep address/command and
+            # replace the last byte with the command complement. Never mask
+            # this byte globally or accept the variant without a prior press.
+            if (main[:2] == b"\xee\x87" and payload[:3] == main[:3]
+                    and payload[3] == (main[2] ^ 255)):
+                return True
+        variants = record.get("repeat_variants", [])
+        if record.get("repeat_hex"):
+            variants = [record["repeat_hex"], *variants]
+        for value in variants:
+            repeat = IRCode.from_hex(value)
+            if repeat.matches(received):
+                return True
+            repeated_payload = repeat.pulse_distance_payload()
+            if payload is not None and repeated_payload == payload:
+                return True
+        return False
+
     def receive(self, data: bytes):
         if self._closing or not self.enabled:
             return
@@ -391,7 +479,8 @@ class Controller:
             fingerprint = code.fingerprint
             matches = [(device, command) for device, commands in self.codes.items()
                        for command, record in commands.items()
-                       if IRCode.from_hex(record["hex"]).matches(code)]
+                       if any(IRCode.from_hex(value).matches(code)
+                              for value in [record["hex"], *record.get("variants", [])])]
             now = time.monotonic()
             chain = self._receive_chain
             recent = chain is not None and now - chain[0] <= .5
@@ -400,8 +489,7 @@ class Controller:
                 # A short repeat may be shared by many buttons: only associate
                 # it with the immediately preceding, still-active named command.
                 matches = [(device, command) for device, command in chain[1]
-                           if "repeat_hex" in self.codes.get(device, {}).get(command, {})
-                           and IRCode.from_hex(self.codes[device][command]["repeat_hex"]).matches(code)]
+                           if self._repeat_matches(device, command, code)]
             if matches and recent and set(matches) == set(chain[1]):
                 is_repeat, repeat_count = True, chain[2] + 1
             # Unknown traffic breaks the chain; learning cannot arm a named hold.

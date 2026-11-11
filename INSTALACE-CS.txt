@@ -1,4 +1,4 @@
-IRTrans Direct 2.3.1 – Home Assistant, přímo bez irserver
+IRTrans Direct 2.3.2 – Home Assistant, přímo bez irserver
 =====================================================
 Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
 
@@ -12,7 +12,7 @@ CO TATO VERZE DĚLÁ
 - Nepotřebuje irserver, další počítač ani hardwarovou databázi IRDB.
 
 Jde o vlastní novou implementaci pro přímý protokol, ne o oficiální release
-původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.3.1.
+původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.3.2.
 Kódy z ayControl se automaticky neimportují; naučíte je znovu v HA.
 
 INSTALACE / VÝMĚNA PŮVODNÍ INTEGRACE
@@ -75,6 +75,29 @@ i když stránku zrovna nemáte otevřenou. Vypnutí Remote pozastaví příjem 
 Během učení se příjmy logují, ale nespouštějí pojmenované automatizační události.
 Log neznamená automatické naučení: pro uložení vysílatelného povelu slouží Learn.
 
+TŘI VZORKY A ROZPOZNÁNÍ DRŽENÍ (2.3.2)
+
+Learn = tři samostatné krátké stisky stejného tlačítka. Sledujte oznámení HA
+1/3, 2/3 a 3/3. Mezi vzorky tlačítko pusťte; integrace dá dvě sekundy pauzu.
+
+Learn repeat = volitelné učení dlouhé verze: třikrát stejné tlačítko podržte
+2–3 sekundy podle oznámení, mezi vzorky pusťte a vyčkejte na další výzvu.
+Dlouhou verzi nemusíte učit, pokud potřebujete jen krátké stisky.
+
+Vzorky se porovnají před uložením. Při neshodě nebo chybě zůstane starý kód.
+Starší uložené povely fungují dál. Nové učení hlavního povelu zruší jeho starý
+repeat, takže v tom případě případnou dlouhou verzi naučte znovu.
+
+Příjem naváže repeat na poslední známý hlavní povel, pokud mezera nepřesáhne
+0,5 sekundy. Rozpoznává i pozorované změny posledního bajtu při držení Menu
+nebo Play, ale pouze v kontextu předchozího správného povelu. Nejde o obecné
+ignorování datových bitů. Samostatný krátký repeat bez hlavního povelu zůstane
+neznámý, protože neříká, ke kterému tlačítku patří.
+
+Download diagnostics nyní obsahuje také přehled naučených hlavních/repeat
+signálů: počty vzorků, symbolická data a časování. Při problému po aktualizaci
+stiskněte krátce, potom podržte stejné tlačítko a stáhněte aktuální diagnostiku.
+
 OPRAVA PRVNÍHO STISKU (2.3.1)
 
 První stisk u pozorovaných 32bitových povelů nyní odpovídá hlavnímu rámci,
@@ -87,8 +110,8 @@ této opravě; aktualizujte přes HACS a restartujte Home Assistant.
 OPAKOVÁNÍ A DRŽENÍ TLAČÍTKA (2.3.0)
 
 U každé pozice jsou nově Learn repeat a Hold 1 s:
-1. Learn: původní tlačítko stiskněte krátce (hlavní povel).
-2. Learn repeat: stejné tlačítko držte 2–3 sekundy (opakovací kód).
+1. Learn: třikrát krátce stiskněte původní tlačítko podle výzev.
+2. Learn repeat (volitelně): třikrát stejné tlačítko podržte 2–3 sekundy podle výzev.
 3. Send vysílá hlavní povel; Hold vyšle hlavní kód a potom naučené opakování.
    Hold se zpřístupní až po naučení obou variant. I pokud ovladač opakuje
    celý povel, proveďte Learn repeat, aby nebylo potřeba chování odhadovat.
@@ -114,7 +137,7 @@ lze omezit na is_repeat: false. Událost puštění se neodhaduje.
 
 OVLADAČE A TLAČÍTKA (2.3.0)
 
-V HACS aktualizujte IRTrans Direct na 2.3.1 a restartujte Home Assistant.
+V HACS aktualizujte IRTrans Direct na 2.3.2 a restartujte Home Assistant.
 Integraci neodstraňujte; naučené kódy a existující ID entit zůstanou zachované.
 
 Settings -> Devices & services -> IRTrans Direct -> Configure:
@@ -126,7 +149,7 @@ Každý ovladač se zobrazí jako samostatné zařízení pod IRTrans Direct.
 Dosavadních osm pozic najdete pod Remote 01; tento ovladač lze přejmenovat.
 Otevřete stránku požadovaného ovladače.
 U každé pozice nastavte název přes pole například 01 Name, stiskněte 01 Learn
-s vaším názvem a krátce stiskněte tlačítko původního ovladače. Po úspěšném
+s vaším názvem a třikrát krátce stiskněte tlačítko podle oznámení HA. Po úspěšném
 naučení se zpřístupní odpovídající 01 Send. Zpráva not learned znamená, že pozice
 ještě nemá uložený kód. Vše funguje bez psaní YAML.
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.2
+
+- Request and compare three short-press samples, and optionally three held samples.
+- Preserve earlier records atomically when samples disagree, time out or fail to save.
+- Associate timing-decoded short repeats and observed Apple-address held variants with the preceding known press.
+- Keep changed payload variants contextual instead of globally masking command bits.
+- Add learned-signal summaries to diagnostics alongside received frames.
+- Keep existing single-sample databases compatible.
+
 ## 2.3.1
 
 - Recognize the observed 32-bit pulse-distance main frame on the first press, with or without appended short repeats.

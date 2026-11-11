@@ -28,7 +28,7 @@ Open **Settings → Devices & services → IRTrans Direct → Configure**. Choos
 Open the remote device page. Each position has:
 
 - **01 Name**: edit the display name, for example `TV power`.
-- **01 Learn · TV power**: press, then briefly press the original remote button when prompted.
+- **01 Learn · TV power**: press, then provide three separate short presses when prompted.
 - **01 Send · TV power**: transmit the saved code. Send is unavailable and marked `(not learned)` until a code is saved.
 
 Names and codes survive reloads/restarts. Renaming a position does not change the code or its stable automation keys. Existing saved codes are assigned to unused positions on upgrade. Each remote supports 1–32 visible positions; reducing the count hides extra positions without deleting stored codes or names. Increasing it again restores them. Groups and code bindings have stable identifiers independent of display names.
@@ -38,6 +38,32 @@ Names and codes survive reloads/restarts. Renaming a position does not change th
 An IR code identifies the learned command, not a unique physical handheld remote or the person pressing it. Identical codes emitted by different physical remotes cannot be distinguished by this integration. `unknown command` means received data did not match a stored code.
 
 The standard remote actions below remain available for scripts and automations.
+
+## Three samples and contextual repeats (2.3.2)
+
+**Learn** now requests three separate short presses. Follow the notification
+for samples 1/3, 2/3 and 3/3, releasing the remote between samples. A two-second
+release pause separates capture requests. The samples must agree before saving.
+
+**Learn repeat** is optional and requests three separate holds of the same
+button. Hold for 2–3 seconds, release when prompted, and wait for the next
+sample. Repeat variants are compared and saved together. A timeout, inconsistent
+samples or storage failure preserves the earlier record. Existing single-sample
+libraries continue working; new learning uses three samples. Relearning the main
+code still clears its previous repeat capture.
+
+For reception, a known main press establishes a short-lived command context.
+Subsequent matching repeat variants inherit that command and set `is_repeat`
+and `repeat_count`. Timing-decoded short repeats can follow supported 32-bit
+main frames even without a separate repeat capture. Observed Apple-address
+hold frames that retain the first three payload bytes and complement the command
+in the last byte are recognized only in this recent context, never as a global
+alias for a new press. Learned variants are also checked in context. The 500 ms
+gap limit still applies; an isolated shared repeat cannot identify a button.
+
+Diagnostics now include learned-signal summaries: sample counts, symbol data,
+payloads and timing pairs for main/repeat captures, without copying complete
+native packet records. This permits comparison with the receive buffer.
 
 ## First-press matching (2.3.1)
 
@@ -55,8 +81,8 @@ protocol recognizer or error-corrector.
 
 Each position also has **Learn repeat** and **Hold 1 s** controls:
 
-1. Use **Learn** and briefly press the original remote button.
-2. Use **Learn repeat** and hold that same button for 2–3 seconds.
+1. Use **Learn** and provide three short presses as prompted.
+2. Optionally use **Learn repeat** and provide three separate holds of that same button, 2–3 seconds each.
 3. **Send** transmits the saved main code; **Hold** sends the main code followed by the saved repeat code over one BINA TCP connection.
 
 Both full native records are saved in HA, without guessing which bytes can be discarded. Manufacturer commands HOST_LEARNIRREPEAT (146) and HOST_LEARNIRRAWREPEAT (210) capture the repeat variant. A new main capture clears the old repeat capture, so relearn both if replacing a command. Timeout/storage failure leaves existing captures intact.
@@ -82,7 +108,7 @@ data:
   timeout: 30
 ```
 
-Select **Perform action**, point the original remote at IRTrans and briefly press the requested button. Home Assistant shows a notification while waiting. Existing commands are replaced only after successful capture and storage. Codes survive integration reloads and HA restarts.
+Select **Perform action**, point the original remote at IRTrans and provide the three short presses requested by the notifications. Home Assistant shows a notification while waiting. Existing commands are replaced only after successful capture and storage. Codes survive integration reloads and HA restarts.
 
 ## Send a stored command
 

@@ -1,0 +1,62 @@
+IRTrans Direct 2.0.0 – verification record, 2026-11-11
+
+Target: the user's LAN firmware L1.10.30, IR firmware E6.08.10, hardware
+without IRDB. No actual device or Raspberry was available for these tests.
+
+Sources inspected:
+- User-supplied IRTrans TCP ASCII Interface_EN.pdf, protocol v3.0.
+  Alearn/Asndhex are distinct from passive RCV_HEX; the latter lacks replay
+  timing/carrier metadata. The PDF does not specify the non-IRDB binary API.
+- https://www.irtrans.de/download/Server/Linux/irserver-src.tar.gz
+  Official 6.10.23: remote.h, lowlevel.c, lanio.c, fileio.c, server.c.
+  Packet layout: IRDATA_LAN header 68 bytes, little endian, COMMAND_LAN 200;
+  result_port selects the response socket. Controller command 2 probes version,
+  commands 18/82 learn standard/raw, command 6 sends full IRDATA.
+  Receive types 230/246/247 with SBUS_REPEAT (1), learn result 242,
+  send acknowledgements 212/213/214/215, checksum=sum(bytes[2:]) modulo 256.
+- https://aycontrol.com/wp-content/uploads/documents/aycontrol_editor_manual.pdf
+  Separate support for old devices / devices without IRDB confirms the use case;
+  this is an independent implementation, not ayControl code or an imported profile.
+- https://www.irtrans.de/download/Docs/2013/Webinterface_EN.pdf
+  IR Relay network reception and IR receive settings.
+
+Reference-vector verification:
+Compiled tests/reference_from_header.c against the manufacturer's remote.h
+using native Clang. Golden frames are in tests/reference-frames.txt. Struct
+offsets and short command packets are compared byte-for-byte in tests.
+To regenerate: obtain the official source and compile with its directory as
+an -iquote path (not -I, since it contains a Windows-only stdint.h).
+
+Unit tests: python3 -m unittest discover -s tests -v
+29 tests passed, including real UDP loopback, malformed frames, C reference
+vectors, reply-port isolation, timeout cancellation, RAW tolerance, RC5/RC6
+receive toggle normalization, storage reload, transactional overwrite and
+batch learning, storage failure, unknown send prevalidation, receive events,
+concurrent learning/sending serialization, deletion and unload cancellation.
+Controller tests replace HA's storage/notification/dispatcher with test objects.
+
+Real Home Assistant test: tests/ha_smoke.py
+Official container ghcr.io/home-assistant/home-assistant:2026.11.1,
+Python 3.14, image digest:
+sha256:6785d1eca68747a524c156faae1b139ed415c07357386ae6fe17291986e59e82
+Run with external networking disabled and temporary HA config, against a
+simulated device over real UDP sockets. Verified actual config flow, loaded
+config entry, remote and sensor entities, standard remote.learn_command,
+actual HA Store file, remote.send_command with final ACK, reception and
+named irtrans_event, sensor update, integration reload restoring the library,
+remote.delete_command, unload/listener cleanup, and the original v1.41
+host/port config-entry format without a unique ID or receive_port setting.
+HA's normal warning about custom integrations is expected.
+
+Limitations:
+- No claim of actual hardware interoperability from mock/emulator tests alone.
+- No irserver executable, daemon, add-on, firmware upload or external host needed.
+- Native IRDATA is stored as hex, not Pronto/CCF or passive RCV_HEX data.
+- Receiving requires the device's IR Relay packets to reach the HA UDP listener.
+- Receiving events and replay can differ for special long/repeat code patterns.
+- IRDATA records larger than 255 bytes and unrecognized special modes fail
+  explicitly. Learning separate repeat frames, alternative captures, hold_secs,
+  Pronto/CCF import and per-number LED output selection are not implemented.
+- Existing dynamic irtrans send services and the inherited infrared emitter
+  are superseded by remote entities/actions and receive events.
+- No settings or files on the user's physical HA/Raspberry/IRTrans were changed.

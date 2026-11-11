@@ -1,0 +1,20 @@
+{
+  "domain": "irtrans",
+  "name": "IRTrans Direct",
+  "codeowners": [
+    "@Nojbi2000"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "persistent_notification"
+  ],
+  "documentation": "https://github.com/Nojbi2000/HACS-IRTrans",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Nojbi2000/HACS-IRTrans/issues",
+  "loggers": [
+    "irtrans"
+  ],
+  "requirements": [],
+  "version": "2.0.0"
+}

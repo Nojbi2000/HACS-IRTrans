@@ -1,0 +1,11 @@
+Repository: https://github.com/Nojbi2000/HACS-IRTrans
+
+GitHub account: Nojbi2000. Publishing metadata has been filled with the confirmed repository and maintainer.
+
+HACS requires public visibility. Once public, inspect the included HACS and Hassfest workflow results. Local tests do not replace these remote checks.
+
+HACS installation: Custom repositories -> add this repository URL -> Integration.
+
+The repository uses normal directory downloads (not zip_release). HACS obtains custom_components/irtrans. The HA-side .storage code library stays outside HACS-managed integration files.
+
+This is a custom repository, not a submission to the default catalog. Physical IRTrans testing remains pending.

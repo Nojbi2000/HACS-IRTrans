@@ -1,0 +1,92 @@
+# IRTrans Direct
+
+A Home Assistant custom integration for direct communication with IRTrans LAN devices, including models without a hardware IR database. Learn commands from an original remote, store complete device-native codes in Home Assistant, send them again, and trigger automations from recognized received commands. No separate `irserver` service is used.
+
+Requires Home Assistant **2026.11.0 or later**. Tested with Home Assistant **2026.11.1**, Python 3.14, and a simulated IRTrans device over real UDP sockets. The target physical firmware is LAN **L1.10.30**, IR **E6.08.10**. Physical-device interoperability still needs confirmation.
+
+## Install with HACS
+
+Repository: https://github.com/Nojbi2000/HACS-IRTrans
+
+Once the repository is public:
+
+1. Open **HACS → ⋮ → Custom repositories**.
+2. Paste `https://github.com/Nojbi2000/HACS-IRTrans` and choose **Integration**.
+3. Add it, find **IRTrans Direct**, and select **Download**.
+4. Restart Home Assistant.
+5. Open **Settings → Devices & services → Add integration → IRTrans Direct**.
+6. Enter the IRTrans device IP, UDP port **21000**, and HA receive port **21000**.
+
+This project uses the integration domain `irtrans`. Install only one integration using that domain. Existing configuration entries from the original v1.41 integration can retain their host/port settings. The old custom send actions and infrared emitter are replaced by the standard remote actions below.
+
+For manual installation, copy only `custom_components/irtrans` to `/config/custom_components/irtrans` and restart HA.
+
+## Learn a command
+
+Open **Developer tools → Actions → YAML mode**. Replace the entity ID if yours differs:
+
+```yaml
+action: remote.learn_command
+target:
+  entity_id: remote.irtrans_remote
+data:
+  device: television
+  command:
+    - power
+  timeout: 30
+```
+
+Select **Perform action**, point the original remote at IRTrans and briefly press the requested button. Home Assistant shows a notification while waiting. Existing commands are replaced only after successful capture and storage. Codes survive integration reloads and HA restarts.
+
+## Send a stored command
+
+```yaml
+action: remote.send_command
+target:
+  entity_id: remote.irtrans_remote
+data:
+  device: television
+  command:
+    - power
+```
+
+Optional `num_repeats` sends the full command repeatedly; `delay_secs` sets the pause. LED selection is available in the integration's options. Delete a code with `remote.delete_command` and the same `device` and `command` fields.
+
+## Receive commands
+
+Enable **Broadcast IR Relay** in the IRTrans web interface under **Network Settings → IR Relay**. By default, use the same LAN for IRTrans and HA; broadcasts normally do not cross routers or VLANs. Where supported, **Send IR Relay to** can direct messages to the HA address. IR reception must be enabled on the device. The integration does not change these device settings automatically.
+
+In **Developer tools → Events**, listen to `irtrans_event` and press a learned button. Recognized commands contain `remote`, `button`, `device`, `command`, and the config entry ID. Automations can use:
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: irtrans_event
+    event_data:
+      remote: television
+      button: power
+actions:
+  - action: persistent_notification.create
+    data:
+      message: IR power button received
+```
+
+`irtrans_received` also reports unknown received commands with a fingerprint and `matched: false`. Receiving a passive signal does not automatically save a replayable command: use the learning action to obtain the full record. Repeated incoming packets can produce repeated events.
+
+## Storage and limitations
+
+Codes are stored in HA's `.storage/irtrans_<entry_id>_codes` as complete native IRDATA records encoded in hex, including timing and carrier information. Include HA configuration in backups. Do not edit the storage file manually. HACS updates only integration files; the code library remains outside the integration directory. Deleting and re-adding the configuration entry creates a different storage key.
+
+Unsupported features fail explicitly: IRDATA records larger than 255 bytes, unrecognized special formats, Pronto/CCF import, `hold_secs`, separate repeat-frame learning, and alternative-code captures. `command_type: raw` is available for exceptional learning cases; matching RAW receive signals also requires compatible device receive settings. Physical compatibility with every remote and hardware variant is not claimed.
+
+The remote entity's turn-on/turn-off actions enable or disable the integration's handling; they do not transmit a TV power command.
+
+## Documentation and validation
+
+- [Český instalační a provozní návod](INSTALACE-CS.txt)
+- [Verification record and protocol references](VERIFICATION.txt)
+- [Third-party notices](THIRD-PARTY-NOTICES.txt)
+
+Run unit tests with `python3 -m unittest discover -s tests -v`. A real-HA integration test using simulated UDP hardware is in `tests/ha_smoke.py`. GitHub workflows are included for protocol/storage tests, HACS validation, and Hassfest.
+
+This repository is prepared for installation as a **HACS custom repository**. It has not been submitted to, reviewed by, or accepted into HACS's default catalog.

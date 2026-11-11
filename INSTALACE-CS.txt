@@ -1,0 +1,196 @@
+IRTrans Direct 2.0.0 – Home Assistant, přímo bez irserver
+=====================================================
+Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
+
+CO TATO VERZE DĚLÁ
+
+- Učí IR povely přes binární UDP protokol přímo z IRTrans LAN.
+- Ukládá celý povel včetně časování, nosné a údajů pro opakování do HA.
+- Vysílá uložené povely zpět přes IRTrans a čeká na potvrzení zařízení.
+- Přijímá binární IR Relay zprávy, porovnává je s uloženými povely a vytváří
+  události pro automatizace. Neznámé povely také oznamuje událostí.
+- Nepotřebuje irserver, další počítač ani hardwarovou databázi IRDB.
+
+Jde o vlastní novou implementaci pro přímý protokol, ne o oficiální release
+původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.0.0.
+Kódy z ayControl se automaticky neimportují; naučíte je znovu v HA.
+
+INSTALACE / VÝMĚNA PŮVODNÍ INTEGRACE
+
+1. Vytvořte zálohu Home Assistantu. Původní adresář irtrans si uschovejte
+   mimo custom_components.
+2. Rozbalte ZIP a NAHRAĎTE CELOU původní složku touto:
+   custom_components/irtrans -> /config/custom_components/irtrans
+   Důležité: staré api.py, infrared.py, device_trigger.py a services.yaml
+   nemají zůstat přimíchané v nové složce. Výsledná cesta obsahuje přímo
+   /config/custom_components/irtrans/manifest.json.
+3. Restartujte celý Home Assistant. Obnovení stránky v prohlížeči nestačí.
+4. Existující záznam IRTrans se stejnou adresou může zůstat, jeho host/port
+   se přebírá. Bylo otestováno načtení původního formátu konfigurace.
+   Na síti musí být přístupný také UDP port 21000, samotný TCP nestačí.
+5. Pokud integraci přidáváte nově:
+   Settings -> Devices & services -> Add integration -> IRTrans Direct.
+   Host = skutečná IP adresa IRTrans, nikoli adresa Raspberry.
+   IRTrans UDP port = 21000.
+   Home Assistant receive port = 21000.
+   Jiný receive port použijte pouze tehdy, pokud na něj umí zařízení
+   směrovat své IR Relay zprávy; běžný broadcast používá port 21000.
+6. Vznikne remote entita (typicky remote.irtrans_remote) a senzor posledního
+   přijatého povelu. Skutečné ID vyberte v UI; může být jiné, zejména při
+   upgradu. Původní senzor zachovává unique ID. Starý infrared emitter tato
+   verze neposkytuje; případnou nepoužívanou starou entitu můžete odstranit.
+
+NASTAVENÍ IRTRANS PRO PRŮBĚŽNÝ PŘÍJEM
+
+V jeho webovém rozhraní zkontrolujte:
+
+- IR send / receive: povolený příjem i vysílání.
+- Network Settings -> IR Relay: Broadcast IR Relay zapnuté, pokud jsou
+  Raspberry a IRTrans ve stejné síti. Podle výrobce bývá zapnuté výchozím
+  nastavením. Přes router/VLAN se broadcast běžně nepřenese.
+- Pro směrovaný příjem použijte Send IR Relay to s IP adresou Raspberry,
+  pokud to vaše webové rozhraní nabízí. Cíl je HA, nikoli počítač s editorem.
+- Nepovolujte Self Repeat kvůli tomuto pluginu; k jeho funkci není potřeba.
+- RCMM/RC5/RC6 Detection zatím ponechte tak, jak je máte.
+- Zavřete jiné programy, které by současně přepínaly IRTrans do učení.
+
+Integrace sama trvale nemění nastavení zařízení a neposílá přijaté signály
+automaticky zpět ven. Příjem zpráv vyžaduje dostupný UDP přijímač HA na portu
+21000. Obsazený port hlásí chybu při načítání; integrace tento problém neskrývá.
+V jednom HA může společný přijímač obsloužit více IRTrans s různými adresami.
+
+UČENÍ JEDNOHO POVELU
+
+Otevřete Developer tools -> Actions -> přepněte do YAML mode.
+Doplňte skutečné ID remote entity, vybrané například v Settings -> Devices
+& services -> IRTrans Direct -> entity Remote.
+
+  action: remote.learn_command
+  target:
+    entity_id: remote.irtrans_remote
+  data:
+    device: televize
+    command:
+      - power
+    timeout: 30
+
+Stiskněte Perform action. HA zobrazí oznámení, který povel právě očekává.
+Namiřte původní ovladač na přijímač IRTrans přibližně z půl metru a krátce
+stiskněte příslušné tlačítko. Po úspěšném dokončení je povel uložen.
+
+Stejně naučíte například volume_up, volume_down či hdmi1. Při stejném device
+vzniká jedna skupina. Opětovné učení stejného jména jej nahradí až po úspěšném
+zachycení a uložení. Chyba nebo timeout původní povel nezničí.
+
+Doporučeno učit jedno tlačítko na jednu akci. Více tlačítek v command je možné,
+HA je vyžádá postupně; celá série se uloží až po úspěšném naučení všech.
+Seznam uložených jmen najdete v atributech remote entity: commands.
+
+VYSÍLÁNÍ
+
+  action: remote.send_command
+  target:
+    entity_id: remote.irtrans_remote
+  data:
+    device: televize
+    command:
+      - power
+
+Pro opakování přidejte num_repeats: 3 a případně delay_secs: 0.4.
+Seznam command může obsahovat sekvenci několika uložených povelů.
+Přijaté potvrzení znamená, že IRTrans přijal/provedl požadavek; nepotvrzuje,
+že povel skutečně zachytila televize. Při chybě se akce ukončí chybou.
+
+Výstup LED se vybírá přes Configure / Options u integrace: default, internal,
+external nebo both. Výchozí je default podle zařízení. Volba číselných výstupů
+1–8 není v této verzi implementována.
+
+PŘÍJEM A AUTOMATIZACE
+
+V Developer tools -> Events zadejte irtrans_event a stiskněte Start listening.
+Stiskněte již naučené tlačítko. Rozpoznaný povel vytvoří například:
+
+  event_type: irtrans_event
+  data:
+    type: remote_pressed
+    remote: televize
+    button: power
+    device: televize
+    command: power
+
+Událost obsahuje navíc skutečné entity_id senzoru, entry_id, host a fingerprint.
+Pro automatizaci lze použít:
+
+  alias: IR tlačítko power
+  triggers:
+    - trigger: event
+      event_type: irtrans_event
+      event_data:
+        remote: televize
+        button: power
+  actions:
+    - action: persistent_notification.create
+      data:
+        message: Bylo přijato tlačítko power
+  mode: single
+
+Událost irtrans_received vzniká pro každý platný přijatý IR paket, včetně
+neznámých. Obsahuje matched a fingerprint. Pokud tato událost nepřichází,
+zkontrolujte IR Relay, aktivní přijímač a síť. Pokud přichází s matched: false,
+porovnejte s naučeným povelem; některé ovladače mají různý krátký, opakovací
+nebo dlouhý stisk. Neznámý přijatý paket se sám neukládá jako vysílatelný povel.
+
+Každý příchozí paket může vyvolat událost, včetně opakování při držení tlačítka.
+Stejný kód uložený pod více názvy vyvolá událost pro každý shodný název.
+Během učení se automatizační události dočasně nevytvářejí.
+
+SMAZÁNÍ A ZÁLOHOVÁNÍ
+
+  action: remote.delete_command
+  target:
+    entity_id: remote.irtrans_remote
+  data:
+    device: televize
+    command:
+      - power
+
+Kódy jsou uložené v /config/.storage/irtrans_<entry_id>_codes, ne v zařízení.
+Soubor spravuje HA, ručně jej neupravujte. Zahrňte konfiguraci HA do záloh;
+před změnou/odebráním integrace si uložte i tento soubor. Znovunačtení a restart
+zachovávají kódy. Odebrání a nové přidání integrace vytvoří jiné entry_id a nové
+prázdné úložiště; pro běžnou aktualizaci integraci neodebírejte.
+
+OMEZENÍ A OVĚŘENÍ
+
+Otestováno v opravdovém Home Assistantu 2026.11.1 s Pythonem 3.14 proti simulaci
+IRTrans přes skutečné UDP sockety: přidání přes formulář, entity, učení, trvalý
+zápis HA Store, odesílání a potvrzení, příjem/události, reload, smazání a unload.
+Jednotkové testy ověřují také chyby, timeout, zrušení, ochranu původních dat,
+RC5/RC6 přepínače, několik datových formátů a souběh akcí.
+
+Fyzický IRTrans nebyl dostupný. Test s vaším L1.10.30 / E6.08.10 je proto ještě
+potřeba. Nejde o tvrzení, že všechny značky ovladačů a varianty hardwaru jsou
+ověřené. Žádný software ani firmware do vašeho zařízení nebyl nahrán.
+Starší verze HA než 2026.11 nejsou touto dodávkou ověřeny.
+
+Implementace zachovává nativní IRDATA včetně speciálních formátů. Nerozpoznaný
+či poškozený formát odmítne místo neúplného uložení. Nepodporuje rámce přes
+255 bajtů, makra zařízení ani import Pronto/CCF. Potvrzování vysílání odpovídá
+novějším LAN firmware (cílové zařízení má L1.10.30).
+
+Standardní učení používá nakonfigurovaný přijímač. Pro problematické povely lze
+v learn_command zkusit command_type: raw. RAW příjem pro rozpoznávání vyžaduje
+odpovídající RAW režim zařízení; plugin jej sám nezapíná. RAW není doporučený
+výchozí režim. Alternativní kódy a hold_secs nejsou implementovány; použijte
+oddělená jména, případně num_repeats pro opakovaná plná stisknutí. Speciální
+opakovačky jako trvalé držení tlačítka nejsou samostatně učené.
+
+Zapnutí/vypnutí remote entity přes remote.turn_on / remote.turn_off pouze
+povoluje/zakazuje obsluhu v integraci; neposílá povel zapnutí/vypnutí televize.
+Staré dynamické akce send_irtrans_ir_command_<remote> a vlastní device triggers
+nahrazují standardní akce remote a události irtrans_event. Příslušné původní
+skripty/automatizace upravte podle výše uvedených příkladů.
+
+Podklady: dodaný ASCII protokol v3.0 (pro odlišení formátů), oficiální binární
+protokol ze zdrojů irserver 6.10.23 a manuál ayControl (varianta bez IRDB).
+Balíček neobsahuje ani nespouští irserver. Testy jsou ve složce tests.

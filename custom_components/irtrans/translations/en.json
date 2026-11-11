@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "IRTrans direct connection",
+        "description": "Enter the IRTrans device address. Codes are stored in Home Assistant. No irserver or hardware IR database is required. The device must send received binary IR data to the Home Assistant IP and receive port.",
+        "data": {
+          "host": "IRTrans IP address or hostname",
+          "port": "IRTrans UDP port",
+          "receive_port": "Home Assistant receive port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No valid binary response from IRTrans. Check the device address and UDP network access."
+    },
+    "abort": {
+      "already_configured": "This IRTrans device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "IR output",
+        "data": {
+          "led": "IR LED output"
+        }
+      }
+    }
+  }
+}

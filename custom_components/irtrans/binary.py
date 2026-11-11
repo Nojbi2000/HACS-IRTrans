@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import hashlib
+import logging
 import socket
 import struct
 from collections.abc import Callable
@@ -19,6 +20,8 @@ ACK = 212
 ACK_WAIT = 213
 ACK_DUPLICATE = 214
 ACK_BUSY = 215
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ProtocolError(Exception):
@@ -239,6 +242,9 @@ class BinaryClient:
                 self._sequence = self._sequence % 255 + 1
                 sequence = self._sequence
             completed = False
+            reply_types = []
+            _LOGGER.debug("IRTrans UDP request to %s:%s, expected type %s, reply port %s",
+                          self.ip, self.port, expected, reply_port)
             try:
                 transport.sendto(envelope(packet, reply_port, sequence), (self.ip, self.port))
                 async with asyncio.timeout(timeout):
@@ -247,6 +253,9 @@ class BinaryClient:
                         if isinstance(data, Exception):
                             raise data
                         kind = data[0]
+                        if len(reply_types) < 20:
+                            reply_types.append(kind)
+                        _LOGGER.debug("IRTrans UDP reply type %s, %s bytes", kind, len(data))
                         if kind == ACK_BUSY:
                             raise ProtocolError("IRTrans reports that its IR output is busy")
                         if kind in (239, 248):
@@ -255,6 +264,13 @@ class BinaryClient:
                             completed = True
                             return data
                         # ACK_WAIT does not mean transmitted; await final ACK.
+            except TimeoutError as exc:
+                received = ",".join(map(str, reply_types)) or "none"
+                raise TimeoutError(
+                    f"No UDP reply type {expected} from {self.ip}:{self.port} within "
+                    f"{timeout:g}s (HA reply port {reply_port}; received types: {received}). "
+                    "Check the IRTrans address, IP access rules and bidirectional UDP connectivity."
+                ) from exc
             finally:
                 if learning and not completed:
                     # Same cancel frame used by ReadLearndataLAN timeout handling.

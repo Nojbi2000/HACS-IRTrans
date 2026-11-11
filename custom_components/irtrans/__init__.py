@@ -27,21 +27,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     lock = state.setdefault("setup_lock", asyncio.Lock())
     async with lock:
         controller = None
+        stage = "resolving the IRTrans address"
         try:
             ip = await resolve_ipv4(entry.data["host"], int(entry.data.get("port", 21000)))
             if any(item.client.ip == ip for item in state["entries"].values()):
                 raise ProtocolError("This IRTrans device is already configured")
             controller = Controller(hass, entry, ip)
+            stage = "loading the HA code library"
             await controller.load()
+            stage = "querying IRTrans firmware via binary UDP"
             await controller.probe()
             if state["hub"] is None:
                 hub = ReceiveHub()
+                stage = "opening the HA UDP receive port"
                 await hub.start(int(entry.data.get("receive_port", 21000)))
                 state["hub"] = hub
             elif state["hub"].transport.get_extra_info("sockname")[1] != int(entry.data.get("receive_port", 21000)):
                 raise ProtocolError("All IRTrans entries must use the same receive port")
             state["entries"][entry.entry_id] = controller
             state["hub"].handlers[ip] = controller.receive
+            stage = "setting up HA entities"
             await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         except (Exception, asyncio.CancelledError) as exc:
             if controller is not None:
@@ -54,7 +59,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 state["hub"] = None
             if isinstance(exc, asyncio.CancelledError):
                 raise
-            raise ConfigEntryNotReady(f"IRTrans direct setup failed: {exc}") from exc
+            raise ConfigEntryNotReady(
+                f"IRTrans failed while {stage}: {str(exc) or type(exc).__name__}"
+            ) from exc
 
     async def heartbeat(_now):
         try:

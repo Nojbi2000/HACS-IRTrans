@@ -89,6 +89,14 @@ actions:
 
 `irtrans_received` also reports unknown received commands with a fingerprint and `matched: false`. Receiving a passive signal does not automatically save a replayable command: use the learning action to obtain the full record. Repeated incoming packets can produce repeated events.
 
+## Live receive log (2.1.1)
+
+On the device page, **Activity** records every incoming datagram from the configured IRTrans, including unknown codes and invalid packets. Open the **Receive log** sensor to see the last 20 readable lines, newest first, plus the last packet's source, data, fingerprint and raw hex. Repeated identical receptions are recorded separately. Incoming packets are also logged during learning, while named command automations remain suppressed during learning.
+
+The full in-memory buffer contains up to 100 packets and can be downloaded through the integration's **Download diagnostics** menu. The buffer resets when HA or the integration restarts; Activity retention follows HA Recorder/Logbook settings. The large rolling attributes are excluded from Recorder duplication; compact receive events provide the Activity history. Turning off the Remote entity pauses receive processing and logging.
+
+The log is a monitor, not a learned-code store. Unknown or malformed received packets are never automatically saved as replayable commands.
+
 ## Storage and limitations
 
 Codes are stored in HA's `.storage/irtrans_<entry_id>_codes` as complete native IRDATA records encoded in hex, including timing and carrier information. Include HA configuration in backups. Do not edit the storage file manually. HACS updates only integration files; the code library remains outside the integration directory. Deleting and re-adding the configuration entry creates a different storage key.

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 import logging
+from zoneinfo import ZoneInfo
 
 from homeassistant.components import persistent_notification
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -55,6 +57,9 @@ class Controller:
         self.sent_count = 0
         self.sensor_entity_id = None
         self.sent_sensor_entity_id = None
+        self.receive_log_entity_id = None
+        self.receive_log = deque(maxlen=100)
+        self.receive_log_count = 0
         self.slot_count = max(1, min(32, int(entry.options.get("button_count", 8))))
         self.slots = {str(index): self.default_slot(index)
                       for index in range(1, self.slot_count + 1)}
@@ -264,20 +269,63 @@ class Controller:
                 del updated[device]
             await self.save_library(updated)
 
+    def record_receive(self, data: bytes, *, code=None, matches=(), error=None):
+        """Keep a bounded live log and describe every received device datagram."""
+        now = datetime.now(timezone.utc)
+        zone = getattr(getattr(self.hass, "config", None), "time_zone", "UTC")
+        try:
+            local_time = now.astimezone(ZoneInfo(zone)).strftime("%H:%M:%S")
+        except (ValueError, KeyError):
+            local_time = now.strftime("%H:%M:%S")
+        self.receive_log_count += 1
+        kind = "known" if matches else ("unknown" if code is not None else "packet")
+        label = self.command_info(*matches[0])["label"] if matches else "unknown command"
+        if error is not None:
+            kind, label = "invalid", "invalid packet"
+        elif code is None:
+            label = f"packet type {data[0]}" if data else "empty packet"
+        payload = code.data if code is not None else data
+        readable = (payload.decode("ascii") if payload and all(32 <= byte < 127 for byte in payload)
+                    else payload.hex())
+        summary = label if matches else f"{label} · {readable[:64]}"
+        record = {"number": self.receive_log_count, "at": now.isoformat(),
+                  "time": local_time, "source": self.client.ip, "kind": kind,
+                  "label": label, "packet_type": data[0] if data else None,
+                  "raw_hex": data.hex(), "data": readable,
+                  "fingerprint": code.fingerprint if code is not None else None,
+                  "during_learning": self.learning,
+                  "message": f"{local_time} · {summary}"}
+        if error is not None:
+            record["error"] = str(error)
+        self.receive_log.appendleft(record)
+        # Compact persistent Activity event; full packet bytes remain in the
+        # bounded in-memory log and the last_packet sensor attribute.
+        self.hass.bus.async_fire("irtrans_receive_log", {
+            "entry_id": self.entry.entry_id, "entity_id": self.receive_log_entity_id,
+            "message": f"received {summary}", "source": self.client.ip,
+            "kind": kind, "fingerprint": record["fingerprint"],
+            "packet_type": record["packet_type"], "number": record["number"],
+            "during_learning": self.learning,
+        })
+
     def receive(self, data: bytes):
-        if self._closing or not self.enabled or self.learning:
+        if self._closing or not self.enabled:
             return
         try:
             code = received_code(data)
             if code is None:
+                self.record_receive(data)
+                self.notify()
                 return
             fingerprint = code.fingerprint
             matches = [(device, command) for device, commands in self.codes.items()
                        for command, record in commands.items()
                        if IRCode.from_hex(record["hex"]).matches(code)]
         except ProtocolError as exc:
-            _LOGGER.debug("Ignoring invalid IRTrans receive packet: %s", exc)
+            self.record_receive(data, error=exc)
+            self.notify()
             return
+        self.record_receive(data, code=code, matches=matches)
         self.online = True
         self.received_count += 1
         event = {"entry_id": self.entry.entry_id, "host": self.client.ip,
@@ -287,8 +335,11 @@ class Controller:
         if matches:
             self.last_received.update({"device": matches[0][0], "command": matches[0][1],
                                        **self.command_info(*matches[0])})
+        if self.learning:
+            # Monitor learning traffic, but do not trigger command automations.
+            self.notify()
+            return
         self.hass.bus.async_fire("irtrans_received", event)
-        # Duplicate aliases intentionally produce an event per matching stored name.
         for device, command in matches:
             self.hass.bus.async_fire("irtrans_event", {
                 **event, "entity_id": self.sensor_entity_id,

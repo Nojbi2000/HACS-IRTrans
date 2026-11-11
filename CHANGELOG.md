@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.1
+
+- Log every received device datagram, including unknown, repeated and invalid data, in Activity.
+- Add Receive log with the last 20 readable entries and detailed last-packet data.
+- Keep a bounded 100-packet in-memory diagnostics buffer.
+- Monitor receive traffic during learning without firing named command automations.
+
 ## 2.1.0
 
 - Add named command positions to the device page with editable names and Learn/Send buttons.

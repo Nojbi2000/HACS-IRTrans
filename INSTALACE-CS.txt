@@ -1,4 +1,4 @@
-IRTrans Direct 2.1.0 – Home Assistant, přímo bez irserver
+IRTrans Direct 2.1.1 – Home Assistant, přímo bez irserver
 =====================================================
 Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
 
@@ -59,6 +59,21 @@ Integrace sama trvale nemění nastavení zařízení a neposílá přijaté sig
 automaticky zpět ven. Příjem zpráv vyžaduje dostupný UDP přijímač HA na portu
 21000. Obsazený port hlásí chybu při načítání; integrace tento problém neskrývá.
 V jednom HA může společný přijímač obsloužit více IRTrans s různými adresami.
+
+ŽIVÝ LOG PŘÍJMU (2.1.1)
+
+Na stránce zařízení sledujte Activity: zaznamenává i nerozpoznané kódy,
+opakované příjmy a chybné pakety. Nový senzor Receive log ukazuje poslední
+příjem. Po rozkliknutí najdete v entries posledních 20 čitelných řádků od
+nejnovějšího; last_packet obsahuje čas, zdroj, data, fingerprint a celý paket
+v hexadecimálním zápisu.
+
+Přes nabídku integrace Download diagnostics lze stáhnout posledních 100
+paketů. Tento zásobník je v paměti a po restartu či reloadu začne znovu.
+Délku historie Activity řídí nastavení Recorder/Logbook v HA. Log funguje,
+i když stránku zrovna nemáte otevřenou. Vypnutí Remote pozastaví příjem i log.
+Během učení se příjmy logují, ale nespouštějí pojmenované automatizační události.
+Log neznamená automatické naučení: pro uložení vysílatelného povelu slouží Learn.
 
 TLAČÍTKA PŘÍMO NA STRÁNCE ZAŘÍZENÍ (2.1.0)
 

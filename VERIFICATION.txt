@@ -1,3 +1,20 @@
+IRTrans Direct 2.1.1 – live receive monitoring, 2026-11-11
+
+Added a bounded 100-packet receive buffer and a Receive log sensor with 20
+readable recent lines and a detailed last_packet attribute. A compact
+irtrans_receive_log event describes every incoming device datagram for Activity,
+including unknown/repeated/invalid packets. Full packet bytes stay in the
+bounded buffer; rolling attributes are excluded from Recorder duplication.
+Diagnostic downloads expose this buffer without exporting the stored library.
+During learning, monitoring continues but named command automations stay muted.
+
+39 unit tests pass. The real-HA test additionally checks the unknown/invalid
+sensor entries, Activity description callbacks and diagnostic-buffer contents.
+Existing native command controls and storage/reload tests remain in place.
+No physical IR transmission was performed for this update.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.1.0 – native command controls, 2026-11-11
 
 Added eight default command positions, with a native Text entity for each

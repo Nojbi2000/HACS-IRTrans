@@ -6,7 +6,7 @@ from .entity import IRTransEntity
 
 async def async_setup_entry(hass, entry, async_add_entities):
     controller = hass.data[DOMAIN]["entries"][entry.entry_id]
-    async_add_entities([IRTransSensor(controller), IRTransSentSensor(controller)])
+    async_add_entities([IRTransSensor(controller), IRTransSentSensor(controller), IRTransReceiveLogSensor(controller)])
 
 
 class IRTransSensor(IRTransEntity, SensorEntity):
@@ -57,3 +57,31 @@ class IRTransSentSensor(IRTransEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return {"sent_count": self.controller.sent_count, **self.controller.last_sent}
+
+
+class IRTransReceiveLogSensor(IRTransEntity, SensorEntity):
+    _attr_name = "Receive log"
+    _attr_icon = "mdi:format-list-bulleted"
+    _unrecorded_attributes = frozenset({"entries", "last_packet"})
+
+    def __init__(self, controller):
+        super().__init__(controller)
+        self._attr_unique_id = f"{controller.entry.entry_id}-receive-log"
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.controller.receive_log_entity_id = self.entity_id
+
+    @property
+    def native_value(self):
+        if not self.controller.receive_log:
+            return "waiting for received data"
+        return self.controller.receive_log[0]["message"][:255]
+
+    @property
+    def extra_state_attributes(self):
+        records = list(self.controller.receive_log)
+        return {"received_packets": self.controller.receive_log_count,
+                "entries": [record["message"] for record in records[:20]],
+                "last_packet": dict(records[0]) if records else None,
+                "buffer_size": 100}

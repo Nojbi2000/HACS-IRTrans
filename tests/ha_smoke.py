@@ -62,6 +62,8 @@ async def main():
             assert hass.states.get(remote).state=='on'
             controller=hass.data['irtrans']['entries'][entry.entry_id]
             events=[]
+            receive_log_events=[]
+            hass.bus.async_listen('irtrans_receive_log',lambda event:receive_log_events.append(event.data))
             sent_events=[]
             hass.bus.async_listen('irtrans_sent',lambda event:sent_events.append(event))
             hass.bus.async_listen('irtrans_event',lambda event: events.append(event.data))
@@ -146,8 +148,29 @@ async def main():
             descriptions={}
             async_describe_events(hass,lambda domain,event,callback:descriptions.update({event:callback}))
             from types import SimpleNamespace
-            described=descriptions['irtrans_event'](SimpleNamespace(data=events[-1]))
+            described=descriptions['irtrans_receive_log'](SimpleNamespace(data=receive_log_events[-1]))
             assert described['message']=='received TV mute'
+            automation_events_before=len(events)
+            transport.sendto(bytes((230,))+code(data=b'11111',command=1).packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            await hass.async_block_till_done()
+            state=hass.states.get(controller.receive_log_entity_id)
+            assert 'unknown command' in state.state,state
+            assert '11111' in state.state
+            assert state.attributes['last_packet']['kind']=='unknown'
+            assert state.attributes['last_packet']['raw_hex']
+            assert len(events)==automation_events_before
+            transport.sendto(b'\xe6\x03\0',('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            await hass.async_block_till_done()
+            state=hass.states.get(controller.receive_log_entity_id)
+            assert state.attributes['last_packet']['kind']=='invalid'
+            assert len(state.attributes['entries'])==2
+            from custom_components.irtrans.diagnostics import async_get_config_entry_diagnostics
+            diagnostic=await async_get_config_entry_diagnostics(hass,entry)
+            assert len(diagnostic['receive_log'])==2
+            assert 'codes' not in diagnostic
+            print('Live unknown/invalid receive log, Activity descriptions and diagnostics: OK')
             print('Native naming, learning/sending buttons, labels, activity and configurable count: OK')
             assert await hass.config_entries.async_unload(entry.entry_id)
             assert hass.data['irtrans']['hub'] is None

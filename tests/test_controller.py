@@ -119,21 +119,24 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.controller.sensor_entity_id='sensor.my_actual_irtrans'
         self.events.clear()
         self.controller.receive(bytes((230,))+code(command=1).packet)
-        self.assertEqual([name for name,_ in self.events],['irtrans_received','irtrans_event'])
+        self.assertEqual([name for name,_ in self.events],['irtrans_receive_log','irtrans_received','irtrans_event'])
         event=self.events[-1][1]
         self.assertEqual((event['device'],event['command']),('tv','power'))
         self.assertEqual(event['entity_id'],'sensor.my_actual_irtrans')
         self.assertTrue(self.controller.last_received['matched'])
         self.events.clear()
         self.controller.receive(bytes((230,))+code(data=b'11111',command=1).packet)
-        self.assertEqual([name for name,_ in self.events],['irtrans_received'])
+        self.assertEqual([name for name,_ in self.events],['irtrans_receive_log','irtrans_received'])
         self.assertFalse(self.controller.last_received['matched'])
 
     async def test_corrupt_and_learning_receive_suppressed(self):
         self.controller.receive(b'\xe6\x03\0')
         self.controller.learning=True
         self.controller.receive(bytes((230,))+code(command=1).packet)
-        self.assertEqual(self.events,[])
+        self.assertEqual([name for name,_ in self.events],['irtrans_receive_log','irtrans_receive_log'])
+        self.assertEqual(self.controller.receive_log_count,2)
+        self.assertTrue(self.controller.receive_log[0]['during_learning'])
+        self.assertEqual(self.controller.receive_log[1]['kind'],'invalid')
 
     async def test_corrupt_database_never_silently_discarded(self):
         for value in ([],{}, {'codes':[]},{'codes':{'tv':{'power':{'hex':'00'}}}}):
@@ -214,3 +217,21 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.controller.last_sent['label'],'TV mute')
         self.assertEqual(self.controller.last_sent['source'],'Button 02')
         self.assertEqual(self.controller.sent_count,1)
+
+    async def test_receive_log_records_unknown_packets_and_is_bounded(self):
+        packet=bytes((230,))+code(command=1).packet
+        for _ in range(150):
+            self.controller.receive(packet)
+        self.assertEqual(self.controller.receive_log_count,150)
+        self.assertEqual(len(self.controller.receive_log),100)
+        self.assertEqual(self.controller.receive_log[0]['number'],150)
+        self.assertEqual(self.controller.receive_log[-1]['number'],51)
+        self.assertEqual(self.controller.receive_log[0]['kind'],'unknown')
+        self.assertEqual(self.controller.receive_log[0]['raw_hex'],packet.hex())
+        self.assertEqual(self.controller.receive_log[0]['source'],'127.0.0.1')
+
+    async def test_receive_log_pauses_when_remote_disabled(self):
+        self.controller.enabled=False
+        self.controller.receive(bytes((230,))+code(command=1).packet)
+        self.assertFalse(self.controller.receive_log)
+        self.assertFalse(self.events)

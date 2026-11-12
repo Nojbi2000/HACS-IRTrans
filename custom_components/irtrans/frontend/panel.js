@@ -70,7 +70,7 @@ class IRTransPanel extends HTMLElement {
       for (const [action, label] of [['learn', 'Learn'], ['learn_repeat', 'Learn repeat'], ['send', 'Send'], ['hold', `Hold ${this._remote.hold_secs} s`]]) {
         const button = document.createElement('button'); button.textContent = label;
         button.dataset.action = action;
-        if (action === 'send') button.className = 'send';
+        if (action === 'send' || action === 'hold') button.className = 'send';
         button.addEventListener('click', () => this._call('button', 'press', slot.entities[action]));
         card.querySelector('.actions').append(button); actions[action] = button;
       }

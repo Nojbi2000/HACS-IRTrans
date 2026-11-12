@@ -6,7 +6,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers import entity_registry
 from .const import DOMAIN
 
-URL = '/irtrans_static/panel-2.4.0.js'
+URL = '/irtrans_static/panel-2.4.1.js'
 
 
 async def async_register_panel(hass):

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.1
+
+- Give Hold the same filled blue styling as Send.
+- Change the panel module URL so browsers load the updated styling.
+
 ## 2.4.0
 
 - Automatically register an admin IRTrans sidebar panel with separated command cards.

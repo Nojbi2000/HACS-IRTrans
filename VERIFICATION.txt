@@ -1,3 +1,9 @@
+IRTrans Direct 2.4.1 – blue Hold action, 2026-11-12
+
+Hold uses the same CSS class as Send. The versioned panel URL is updated.
+The local browser checks pass; mobile dark screenshot confirms matching fills.
+This change does not affect IR commands or saved data.
+
 IRTrans Direct 2.4.0 – grouped command panel, 2026-11-12
 
 67 protocol/controller tests pass. Real HA 2026.11.1 smoke passes and additionally

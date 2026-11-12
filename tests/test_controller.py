@@ -439,3 +439,37 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.controller.receive(bytes((230,))+code(command=1).packet)
         self.assertFalse(self.controller.receive_log)
         self.assertFalse(self.events)
+
+
+class RemoteGroupTests(unittest.TestCase):
+    def test_add_group_preserves_legacy_and_other_options(self):
+        append=importlib.import_module('direct_test_package.groups').append_remote
+        options={'button_count':12,'led':'both','hold_secs':2}
+        before=deepcopy(options)
+        groups,group=append(options,' Television ',4,'a'*32)
+        self.assertEqual(options,before)
+        self.assertEqual(groups[0],{'id':'main','name':'Remote 01','base':0,'button_count':12})
+        self.assertEqual(group['name'],'Television')
+        self.assertEqual(group['base'],1000)
+
+    def test_add_group_request_is_idempotent(self):
+        append=importlib.import_module('direct_test_package.groups').append_remote
+        groups,group=append({},'TV',8,'a'*32)
+        again,existing=append({'remotes':groups},'TV',8,'a'*32)
+        self.assertEqual(groups,again)
+        self.assertEqual(group,existing)
+        with self.assertRaises(ValueError):append({'remotes':groups},'Other name',8,'a'*32)
+
+    def test_add_group_validates_without_mutating_options(self):
+        append=importlib.import_module('direct_test_package.groups').append_remote
+        for name,count,request in [(' ',8,'a'*32),('x'*101,8,'a'*32),('TV',33,'a'*32),
+                                   ('TV',0,'a'*32),('TV',True,'a'*32),('TV',1.5,'a'*32),('TV',8,'bad')]:
+            with self.subTest(name=name,count=count,request=request):
+                with self.assertRaises(ValueError):append({},name,count,request)
+
+    def test_add_multiple_groups_allocates_stable_bases(self):
+        append=importlib.import_module('direct_test_package.groups').append_remote
+        groups,first=append({},'TV',8,'a'*32)
+        groups,second=append({'remotes':groups},'Amp',2,'b'*32)
+        self.assertEqual([g['base'] for g in groups],[0,1000,2000])
+        self.assertNotEqual(first['id'],second['id'])

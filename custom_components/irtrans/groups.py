@@ -1,5 +1,7 @@
 """Stable remote groups and button positions, independent of display names."""
 from copy import deepcopy
+from uuid import uuid4
+import re
 
 
 def remote_groups(options):
@@ -29,3 +31,27 @@ def remote_groups(options):
     if "main" not in ids:
         raise ValueError("Original remote group is missing")
     return deepcopy(groups)
+
+
+def append_remote(options, name, button_count, remote_id=None):
+    """Create stable group data shared by the panel and Options flow."""
+    name = name.strip()
+    if not 1 <= len(name) <= 100:
+        raise ValueError("Remote name must contain 1–100 characters")
+    if type(button_count) is not int or not 1 <= button_count <= 32:
+        raise ValueError("Number of buttons must be between 1 and 32")
+    remote_id = uuid4().hex if remote_id is None else remote_id
+    if not isinstance(remote_id, str) or re.fullmatch(r"[0-9a-f]{32}", remote_id) is None:
+        raise ValueError("Invalid remote request ID")
+    groups = remote_groups(options)
+    for group in groups:
+        if group["id"] == remote_id:
+            if group["name"] != name or group["button_count"] != button_count:
+                raise ValueError("This request was already saved with different settings")
+            return groups, group
+    base = max(group["base"] for group in groups) + 1000
+    if base > 1000000:
+        raise ValueError("No more remote groups can be added")
+    group = {"id": remote_id, "name": name, "base": base, "button_count": button_count}
+    groups.append(group)
+    return groups, group

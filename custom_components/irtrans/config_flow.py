@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import voluptuous as vol
-from uuid import uuid4
-from .groups import remote_groups
+from .groups import remote_groups, append_remote
 from homeassistant import config_entries
 from homeassistant.core import callback
 from .binary import BinaryClient, ProtocolError, resolve_ipv4
@@ -61,9 +60,7 @@ class IRTransOptionsFlow(config_entries.OptionsFlow):
             if not name or len(name) > 100:
                 errors["name"] = "invalid_name"
             else:
-                groups.append({"id": uuid4().hex, "name": name,
-                               "base": max(group["base"] for group in groups) + 1000,
-                               "button_count": user_input["button_count"]})
+                groups, _group = append_remote(self.config_entry.options, name, user_input["button_count"])
                 return self.save_groups(groups)
         return self.remote_form("add_remote", user_input or {
             "name": f"Remote {len(groups) + 1:02d}", "button_count": 8}, errors)

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.0
+
+- Show compact name/Send/Hold rows by default.
+- Toggle naming and learning controls with the Edit & learn gear.
+- Create remotes directly from the panel with name and button-count fields.
+- Automatically select new remotes after entity reload without unmounting the panel.
+- Share creation validation with Options and make creation requests idempotent.
+- Commit all generated panel screenshots, including 2.4.1 and 2.5.0 previews.
+
 ## 2.4.1
 
 - Give Hold the same filled blue styling as Send.

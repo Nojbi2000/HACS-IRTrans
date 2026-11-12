@@ -1,3 +1,31 @@
+IRTrans Direct 2.5.0 – compact mode and in-panel remote creation, 2026-11-12
+
+71 protocol/controller/group tests pass. Added tests cover validation, preservation
+of legacy/other options, stable slot allocation and idempotent creation requests.
+Real HA 2026.11.1 smoke passes with simulated IR hardware. Added checks create a
+remote through the admin WebSocket endpoint, wait for automatic entity reload,
+verify the new group's name/count, existing code/option/ID preservation, panel
+availability, duplicate-request handling, invalid input rejection and non-admin
+rejection. Existing protocol/learning/receive regressions still pass.
+
+Headless Chrome checks with mocked HA state verify compact name/Send/Hold rows,
+matching blue action fills, hidden learning controls by default, gear toggling,
+name editing, direct creation form, input validation, retained form on error,
+same request ID on retry, automatic selection and correct new button count,
+inline progress, disabled controls and escaped labels. Eight new screenshot
+variants were generated; representative mobile/desktop/edit/form/progress views
+were visually inspected. Three earlier previews are retained in docs/screenshots.
+Screenshots use synthetic panel data and do not contain production credentials.
+
+No production HA instance or physical IR settings were changed. Adding a remote
+uses the normal HA options listener to reload entities; the panel remains mounted
+through that reload. No learning or IR transmit behavior is changed by edit mode.
+The backend requires HA admin privileges and rejects creation during an active
+learn/send operation. Idempotency does not permit changed fields to reuse a saved
+request ID. New panel assets use a versioned local URL for browser cache refresh.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.4.1 – blue Hold action, 2026-11-12
 
 Hold uses the same CSS class as Send. The versioned panel URL is updated.

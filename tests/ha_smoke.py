@@ -370,6 +370,46 @@ async def main():
 
 
 
+            # Add directly from the panel and wait for its entity reload.
+            from custom_components.irtrans.panel import websocket_add_remote
+            saved_codes=json.dumps(controller.codes,sort_keys=True)
+            saved_options=dict(entry.options)
+            saved_groups=len(controller.groups)
+            async def add_from_panel(message):
+                result=asyncio.get_running_loop().create_future()
+                conn=SimpleNamespace(user=SimpleNamespace(is_admin=True),
+                    send_result=lambda message_id,data:result.set_result(('ok',data)),
+                    send_error=lambda message_id,code,message:result.set_result(('error',code)))
+                websocket_add_remote(hass,conn,message)
+                return await asyncio.wait_for(result,25)
+            message={'id':10,'type':'irtrans/add_remote','entry_id':entry.entry_id,
+                     'name':'Bedroom','button_count':3,'request_id':'a'*32}
+            status,result=await add_from_panel(message)
+            assert status=='ok' and result['ready'],(status,result)
+            assert result['key']==f'{entry.entry_id}/'+('a'*32)
+            await hass.async_block_till_done()
+            controller=hass.data['irtrans']['entries'][entry.entry_id]
+            assert len(controller.groups)==saved_groups+1
+            assert controller.groups[-1]['name']=='Bedroom'
+            assert controller.groups[-1]['button_count']==3
+            assert json.dumps(controller.codes,sort_keys=True)==saved_codes
+            assert entry.options['led']==saved_options['led']
+            assert entry.options['hold_secs']==saved_options['hold_secs']
+            assert registry.async_get_entity_id('text','irtrans',f'{entry.entry_id}-slot-2-name')==name
+            assert 'irtrans' in hass.data[frontend.DATA_PANELS]
+            status,result=await add_from_panel(message)
+            assert status=='ok' and result['ready']
+            assert len(controller.groups)==saved_groups+1
+            assert (await add_from_panel({**message,'request_id':'b'*32,'name':' '}))[0]=='error'
+            assert len(controller.groups)==saved_groups+1
+            denied=False
+            try:
+                websocket_add_remote(hass,SimpleNamespace(user=SimpleNamespace(is_admin=False)),message)
+            except Unauthorized:
+                denied=True
+            assert denied
+            print('Add remote from panel, automatic entity reload, idempotent retry and code/option preservation: OK')
+
             assert await hass.config_entries.async_unload(entry.entry_id)
             assert hass.data['irtrans']['hub'] is None
             assert 'irtrans' not in hass.data[frontend.DATA_PANELS]

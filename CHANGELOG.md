@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.3
+
+- Recognize complete short-repeat trains containing bounded sub-350 µs marks at frame boundaries.
+- Recognize complete main payloads followed by these validated repeat trains.
+- Preserve named repeat continuation without globally retaining context across unknown traffic.
+- Leave learning, native transmission records and device settings unchanged.
+
 ## 2.3.2
 
 - Request and compare three short-press samples, and optionally three held samples.

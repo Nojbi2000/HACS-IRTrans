@@ -71,6 +71,18 @@ def apple_hold_variant(command=2):
     return b.IRCode.parse(b.checksum(packet))
 
 
+def noisy_repeat_train(*, payload=bytes.fromhex('aa5502a5'), main=False, leading=False, pulse=304, glitches=1, trailing=False):
+    original=distance_code(payload,repeat=True)
+    prefix=original.data[:34] if main else b''
+    gap=b'4'*glitches
+    symbols=prefix + ((gap+b'20') if leading else (b'20'+gap+(b'' if trailing else b'20')))
+    packet=bytearray(original.packet[:44])
+    packet[0],packet[6],packet[41]=44+len(symbols),len(symbols),6
+    struct.pack_into('<h',packet,19,4018)  # 32144 us space
+    struct.pack_into('<h',packet,35,pulse//8)
+    return b.IRCode.parse(b.checksum(packet+symbols))
+
+
 def version():
     packet = bytearray(78)
     packet[:2] = bytes((231, 77))
@@ -170,6 +182,21 @@ class CodecTests(unittest.TestCase):
         self.assertEqual(variant.pulse_distance_payload(),bytes.fromhex('ee8702fd'))
         self.assertIsNone(variant.main_frame())
         self.assertFalse(distance_code(bytes.fromhex('ee8702a5')).matches(variant))
+
+    def test_repeat_train_tolerates_only_short_boundary_glitches(self):
+        self.assertTrue(noisy_repeat_train().is_short_repeat())
+        self.assertTrue(noisy_repeat_train(trailing=True,pulse=232).is_short_repeat())
+        self.assertFalse(noisy_repeat_train(leading=True).is_short_repeat())
+        self.assertFalse(noisy_repeat_train(pulse=400).is_short_repeat())
+        self.assertFalse(noisy_repeat_train(glitches=3).is_short_repeat())
+        self.assertFalse(code(data=b'00',mode=0).is_short_repeat())
+
+    def test_main_frame_with_noisy_repeat_suffix_preserves_payload(self):
+        combined=noisy_repeat_train(main=True,pulse=328)
+        self.assertEqual(combined.main_frame(),distance_code().main_frame())
+        self.assertTrue(distance_code().matches(combined))
+        self.assertFalse(distance_code(bytes.fromhex('aa5504a5')).matches(combined))
+        self.assertEqual(combined.for_send()[6:],combined.packet[6:])
 
     def test_c_reference_vectors(self):
         lines = (ROOT / 'tests/reference-frames.txt').read_text().splitlines()

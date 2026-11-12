@@ -8,7 +8,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock
 
-from test_binary import code, distance_code, short_repeat, apple_hold_variant
+from test_binary import code, distance_code, short_repeat, apple_hold_variant, noisy_repeat_train
 
 ROOT=Path(__file__).resolve().parents[1]
 package=types.ModuleType('direct_test_package')
@@ -213,6 +213,27 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.controller._receive_chain=(c.time.monotonic()-1,[('tv','menu')],1)
         self.controller.receive(bytes((230,))+short_repeat().packet)
         self.assertFalse(self.controller.last_received['matched'])
+
+    async def test_noisy_repeat_train_keeps_following_short_repeat_named(self):
+        self.controller.client.learn.return_value=c.IRCode.parse(distance_code().packet)
+        await self.controller.learn('tv',['menu'])
+        train=bytes((230,))+noisy_repeat_train().packet
+        self.controller.receive(train)
+        self.assertFalse(self.controller.last_received['matched'])
+        self.controller.receive(bytes((230,))+distance_code().packet)
+        self.controller.receive(train)
+        self.assertEqual(self.controller.last_received['command'],'menu')
+        self.assertTrue(self.controller.last_received['is_repeat'])
+        self.controller.receive(bytes((230,))+short_repeat().packet)
+        self.assertEqual(self.controller.last_received['command'],'menu')
+        self.assertEqual(self.controller.last_received['repeat_count'],2)
+
+    async def test_noisy_combined_main_can_start_a_fresh_press(self):
+        self.controller.client.learn.return_value=c.IRCode.parse(distance_code().packet)
+        await self.controller.learn('tv',['menu'])
+        self.controller.receive(bytes((230,))+noisy_repeat_train(main=True).packet)
+        self.assertEqual(self.controller.last_received['command'],'menu')
+        self.assertFalse(self.controller.last_received['is_repeat'])
 
     async def test_learning_persists_and_reload_restores_codes(self):
         await self.controller.learn('tv',['power'])

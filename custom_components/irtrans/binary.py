@@ -173,11 +173,28 @@ class IRCode:
 
     @staticmethod
     def _short_repeat_pairs(timings):
-        return bool(timings) and len(timings) % 2 == 0 and all(
-            8000 <= header[0] <= 10000 and 1700 <= header[1] <= 2800
-            and 350 <= stop[0] <= 850
-            for header, stop in zip(timings[::2], timings[1::2])
-        )
+        """Validate whole repeat frames with bounded short inter-frame glitches.
+
+        Captures show complete header/stop pairs separated or followed by
+        208–328 us marks. Never skip a header, data bit or a stop pulse; only
+        permit up to two sub-350 us marks at complete frame boundaries.
+        """
+        index = frames = glitches = 0
+        while index < len(timings):
+            if index + 1 < len(timings):
+                header, stop = timings[index:index + 2]
+                if (8000 <= header[0] <= 10000 and 1700 <= header[1] <= 2800
+                        and 350 <= stop[0] <= 850):
+                    frames += 1
+                    index += 2
+                    continue
+            pulse, pause = timings[index]
+            if frames and 0 < pulse < 350 and pause >= 0 and glitches < 2:
+                glitches += 1
+                index += 1
+                continue
+            return False
+        return frames > 0
 
     def is_short_repeat(self):
         timings = self.pulse_distance_timings()

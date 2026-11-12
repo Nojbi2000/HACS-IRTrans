@@ -39,6 +39,17 @@ An IR code identifies the learned command, not a unique physical handheld remote
 
 The standard remote actions below remain available for scripts and automations.
 
+## Repeat trains with short boundary glitches (2.3.3)
+
+Received repeat trains may contain an extra 208–328 µs mark after a complete
+repeat or between two complete repeats. The decoder now permits at most two
+sub-350 µs marks at those boundaries. It still requires a complete repeat
+header and stop pulse, never skips payload bits, and rejects leading noise,
+longer marks or excessive extra marks. The same validation handles a complete
+main frame followed by such a repeat train, so it can establish a new press.
+A repeat train without a recent named main press still remains unknown.
+Saved codes, learning, sending and physical device settings are unchanged.
+
 ## Three samples and contextual repeats (2.3.2)
 
 **Learn** now requests three separate short presses. Follow the notification

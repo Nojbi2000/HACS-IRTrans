@@ -14,7 +14,7 @@ import tempfile
 from types import MappingProxyType
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from test_binary import FakeTCPDevice, code, distance_code, short_repeat, apple_hold_variant
+from test_binary import FakeTCPDevice, code, distance_code, short_repeat, apple_hold_variant, noisy_repeat_train
 
 from homeassistant import bootstrap, loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntries
@@ -283,6 +283,22 @@ async def main():
             assert learned['repeat_samples']==3
             assert learned['repeat'] is not None
             print('Three-sample learning, contextual physical hold variants, short repeats and signal diagnostics: OK')
+            # Main payload survives a noisy suffix and establishes a fresh chain.
+            fake.reply=distance_code(bytes.fromhex('aa5506a5'))
+            await hass.services.async_call('remote','learn_command',{'entity_id':remote,
+                'device':'tv','command':['noisy_menu'],'timeout':5},blocking=True)
+            transport.sendto(bytes((230,))+noisy_repeat_train(main=True,payload=bytes.fromhex('aa5506a5')).packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            transport.sendto(bytes((230,))+noisy_repeat_train().packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            transport.sendto(bytes((230,))+short_repeat().packet,('127.0.0.1',receive_port))
+            await asyncio.sleep(.05)
+            await hass.async_block_till_done()
+            assert controller.last_received['command']=='noisy_menu'
+            assert controller.last_received['is_repeat']
+            assert controller.last_received['repeat_count']==2
+            print('Noisy main/repeat suffixes preserve named repeat continuation: OK')
+
 
 
             assert await hass.config_entries.async_unload(entry.entry_id)

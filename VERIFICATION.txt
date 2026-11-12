@@ -1,3 +1,28 @@
+IRTrans Direct 2.3.3 – bounded repeat-boundary glitches, 2026-11-12
+
+64 protocol/controller tests pass. New tests exercise an extra short mark between
+whole repeat frames or after a whole repeat, main frames with that repeat suffix,
+continued named S0 repeats, isolated-train rejection, leading-noise rejection,
+longer-mark rejection, and rejection of more than two extra marks. Payload-bit
+separation and original native send bytes remain checked.
+
+Replayed the newly supplied 2.3.2 diagnostic buffer chronologically using original
+timestamps and main-reference timings reconstructed from learned-signal summaries.
+Before: 59 known, 23 unknown, 18 non-command packets. After: 81 known, 1 unknown,
+18 non-command packets. Recovered 22 previously unknown records (13 Play, 9 Menu).
+The remaining isolated 00 noise record is not attributed to a command. Counters
+refer to received packets, not a verified count of physical button presses.
+
+Examples of newly handled shapes include a complete repeat, a 304 µs boundary
+mark, then another complete repeat; a main payload followed by repeats separated
+by a 328 µs mark; and a complete repeat followed by a 232 µs trailing mark. No
+payload bit is masked. No global grace period across arbitrary unknown data was
+introduced. Original captured packets are preserved. No settings or firmware on
+the user's IRTrans were changed, and no physical IR replay was performed.
+Recognition improvements do not establish the cause of reported hardware resets.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.3.2 – three samples and contextual hold recognition, 2026-11-12
 
 60 protocol/controller tests pass. Real HA 2026.11.1 smoke passes against simulated

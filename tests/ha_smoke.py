@@ -298,6 +298,48 @@ async def main():
             assert controller.last_received['is_repeat']
             assert controller.last_received['repeat_count']==2
             print('Noisy main/repeat suffixes preserve named repeat continuation: OK')
+            # Observe the actual UI states while each sample is waiting.
+            progress_id=registry.async_get_entity_id('sensor','irtrans',
+                f'{entry.entry_id}-remote-main-learning-status')
+            assert progress_id
+            original_learn=controller.client.learn
+            waiting=asyncio.Queue()
+            releases=[asyncio.Event() for _ in range(3)]
+            sample_index=0
+            async def gated_learn(**kwargs):
+                nonlocal sample_index
+                current=sample_index
+                sample_index+=1
+                await waiting.put(current)
+                await releases[current].wait()
+                return await original_learn(**kwargs)
+            controller.client.learn=gated_learn
+            task=asyncio.create_task(hass.services.async_call('button','press',
+                {'entity_id':learn},blocking=True))
+            for sample in range(3):
+                assert await asyncio.wait_for(waiting.get(),5)==sample
+                await asyncio.sleep(.02)
+                state=hass.states.get(progress_id)
+                assert f'{sample+1}/3' in state.state,state
+                assert state.attributes['phase']=='waiting'
+                control=hass.states.get(learn)
+                assert control.state=='unavailable'
+                assert f'{sample+1}/3' in control.attributes['friendly_name'],control
+                releases[sample].set()
+            await task
+            await hass.async_block_till_done()
+            assert 'Saved' in hass.states.get(progress_id).state
+            controller.online=False
+            controller.notify()
+            await hass.async_block_till_done()
+            state=hass.states.get(progress_id)
+            assert state.state!='unavailable'
+            assert 'IRTrans unavailable' in state.state
+            assert not state.attributes['online']
+            controller.online=True
+            controller.notify()
+            print('Visible 1/3–3/3 instructions in disabled Learn row, per-remote status and offline explanation: OK')
+
 
 
 

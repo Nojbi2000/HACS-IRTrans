@@ -6,7 +6,8 @@ from .entity import IRTransEntity
 
 async def async_setup_entry(hass, entry, async_add_entities):
     controller = hass.data[DOMAIN]["entries"][entry.entry_id]
-    async_add_entities([IRTransSensor(controller), IRTransSentSensor(controller), IRTransReceiveLogSensor(controller)])
+    async_add_entities([IRTransSensor(controller), IRTransSentSensor(controller), IRTransReceiveLogSensor(controller),
+                        *[IRTransLearningSensor(controller, group) for group in controller.groups]])
 
 
 class IRTransSensor(IRTransEntity, SensorEntity):
@@ -85,3 +86,35 @@ class IRTransReceiveLogSensor(IRTransEntity, SensorEntity):
                 "entries": [record["message"] for record in records[:20]],
                 "last_packet": dict(records[0]) if records else None,
                 "buffer_size": 100}
+
+
+class IRTransLearningSensor(IRTransEntity, SensorEntity):
+    """Keep instructions visible even when controls are disabled or offline."""
+    _attr_name = "Learning status"
+    _attr_icon = "mdi:progress-question"
+
+    def __init__(self, controller, group):
+        super().__init__(controller)
+        self.remote_group = group
+        self._attr_unique_id = f"{controller.entry.entry_id}-remote-{group['id']}-learning-status"
+
+    @property
+    def available(self):
+        return True
+
+    @property
+    def native_value(self):
+        controller = self.controller
+        if not controller.learning and not controller.online:
+            return "IRTrans unavailable · check power and connection"
+        if not controller.enabled:
+            return "Remote disabled · turn on the IRTrans Remote entity"
+        if controller.learning and controller.learning_progress["phase"] == "idle":
+            return "Preparing learning"
+        return controller.learning_progress["message"][:255]
+
+    @property
+    def extra_state_attributes(self):
+        return {**self.controller.learning_progress,
+                "learning": self.controller.learning, "online": self.controller.online,
+                "last_error": self.controller.last_error}

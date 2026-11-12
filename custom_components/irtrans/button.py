@@ -24,6 +24,10 @@ class IRTransCommandButton(IRTransEntity, ButtonEntity):
 
     @property
     def name(self):
+        progress = self.controller.learning_progress
+        if (self.controller.learning and progress.get("slot") == self.index
+                and self.action == ("learn_repeat" if progress.get("kind") == "repeat" else "learn")):
+            return f"{self.number:02d} {progress['message']}"
         label = self.controller.slots[str(self.index)]["label"]
         suffix = " (not learned)" if self.action in ("send", "hold") and not self.controller.slot_learned(self.index) else ""
         if self.action == "hold" and not suffix and not self.controller.slot_repeat_learned(self.index):

@@ -53,6 +53,7 @@ class Controller:
         self.online = False
         self.enabled = True
         self.learning = False
+        self.learning_progress = {"phase": "idle", "message": "Ready to learn"}
         self.last_error: str | None = None
         self.last_received: dict = {}
         self.last_sent: dict = {}
@@ -224,6 +225,28 @@ class Controller:
             self._tasks.discard(task)
             self.notify()
 
+    def update_learning_progress(self, kind, device, command, sample, phase):
+        info = self.command_info(device, command)
+        label = info["label"]
+        messages = {
+            "waiting": f"{sample}/3: {'Hold' if kind == 'repeat' else 'Briefly press'} {label}"
+                       + (" for 2–3 s" if kind == "repeat" else ", then release"),
+            "release": f"Release {label} · wait for sample {sample}/3",
+            "saving": f"Saving {label} · 3/3 received",
+            "done": f"Saved {label} · {'repeat' if kind == 'repeat' else 'short press'} · 3/3",
+        }
+        self.learning_progress = {"kind": kind, "device": device, "command": command,
+                                  "slot": info["slot"], "label": label,
+                                  "sample": sample, "total": 3, "phase": phase,
+                                  "message": messages[phase]}
+        self.notify()
+
+    def learning_failed(self, error):
+        self.learning_progress = {**self.learning_progress, "phase": "error",
+                                  "message": "Learning cancelled" if isinstance(error, asyncio.CancelledError)
+                                  else f"Learning failed: {str(error) or type(error).__name__}"}
+        self.notify()
+
     async def learn(self, device: str | None, commands: Iterable[str], *,
                     timeout: int = 30, raw: bool = False):
         device, commands = device_name(device), names(commands, unique=True)
@@ -231,6 +254,7 @@ class Controller:
             raise ValueError("Learning timeout must be between 5 and 120 seconds")
         async with self.operation():
             self.learning = True
+            self.learning_progress = {"phase": "preparing", "message": "Preparing learning"}
             self.notify()
             # Multi-command learning is committed as one transaction only after
             # all captures succeed. Existing records survive timeout/cancellation.
@@ -240,12 +264,14 @@ class Controller:
                     samples = []
                     for sample in range(1, 4):
                         if sample > 1:
+                            self.update_learning_progress("short", device, command, sample, "release")
                             persistent_notification.async_create(
                                 self.hass, "Release the original remote button. "
                                 "The next sample starts in 2 seconds.",
                                 title=f"IRTrans: short sample {sample}/3", notification_id=self.notification_id,
                             )
                             await asyncio.sleep(_SAMPLE_RELEASE_SECONDS)
+                        self.update_learning_progress("short", device, command, sample, "waiting")
                         persistent_notification.async_create(
                             self.hass,
                             f"Sample **{sample}/3**: briefly press **{self.command_info(device, command)['label']}** "
@@ -264,11 +290,16 @@ class Controller:
                         "learned_at": datetime.now(timezone.utc).isoformat(),
                         "raw": raw,
                     }
+                self.update_learning_progress("short", device, command, 3, "saving")
                 await self.save_library(updated)
+                self.update_learning_progress("short", device, command, 3, "done")
                 self.online = True
                 self.hass.bus.async_fire("irtrans_learned", {
                     "entry_id": self.entry.entry_id, "device": device, "commands": commands,
                 })
+            except BaseException as exc:
+                self.learning_failed(exc)
+                raise
             finally:
                 self.learning = False
                 self._receive_chain = None
@@ -283,6 +314,7 @@ class Controller:
             if command not in self.codes.get(device, {}):
                 raise ValueError("Learn the main command first")
             self.learning = True
+            self.learning_progress = {"phase": "preparing", "message": "Preparing learning"}
             self.notify()
             try:
                 record = self.codes[device][command]
@@ -290,12 +322,14 @@ class Controller:
                 samples = []
                 for sample in range(1, 4):
                     if sample > 1:
+                        self.update_learning_progress("repeat", device, command, sample, "release")
                         persistent_notification.async_create(
                             self.hass, "Release the original remote button now. "
                             "The next sample starts in 2 seconds.",
                             title=f"IRTrans: repeat sample {sample}/3", notification_id=self.notification_id,
                         )
                         await asyncio.sleep(_SAMPLE_RELEASE_SECONDS)
+                    self.update_learning_progress("repeat", device, command, sample, "waiting")
                     persistent_notification.async_create(
                         self.hass,
                         f"Sample **{sample}/3**: hold **{self.command_info(device, command)['label']}** "
@@ -327,8 +361,13 @@ class Controller:
                     repeat_sample_count=3,
                     repeat_learned_at=datetime.now(timezone.utc).isoformat(),
                 )
+                self.update_learning_progress("repeat", device, command, 3, "saving")
                 await self.save_library(updated)
+                self.update_learning_progress("repeat", device, command, 3, "done")
                 self.online = True
+            except BaseException as exc:
+                self.learning_failed(exc)
+                raise
             finally:
                 self.learning = False
                 self._receive_chain = None

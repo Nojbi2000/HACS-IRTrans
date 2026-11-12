@@ -235,6 +235,33 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.controller.last_received['command'],'menu')
         self.assertFalse(self.controller.last_received['is_repeat'])
 
+    async def test_learning_progress_reports_three_samples_and_release_steps(self):
+        seen=[]
+        self.controller.notify=lambda:seen.append(deepcopy(self.controller.learning_progress))
+        await self.controller.learn('buttons',['button_01'])
+        self.assertEqual([p['sample'] for p in seen if p['phase']=='waiting'],[1,2,3])
+        self.assertEqual([p['sample'] for p in seen if p['phase']=='release'],[2,3])
+        self.assertEqual(self.controller.learning_progress['phase'],'done')
+        self.assertIn('3/3',self.controller.learning_progress['message'])
+        self.assertFalse(self.controller.learning)
+
+    async def test_failed_learning_keeps_a_visible_error_status(self):
+        self.controller.client.learn.side_effect=TimeoutError('No response')
+        with self.assertRaises(TimeoutError):
+            await self.controller.learn('buttons',['button_01'])
+        self.assertEqual(self.controller.learning_progress['phase'],'error')
+        self.assertIn('No response',self.controller.learning_progress['message'])
+        self.assertFalse(self.controller.learning)
+
+    async def test_repeat_progress_identifies_repeat_and_completes(self):
+        await self.controller.learn('buttons',['button_01'])
+        seen=[]
+        self.controller.notify=lambda:seen.append(deepcopy(self.controller.learning_progress))
+        await self.controller.learn_repeat('buttons','button_01')
+        self.assertEqual([p['sample'] for p in seen if p['phase']=='waiting'],[1,2,3])
+        self.assertTrue(all(p['kind']=='repeat' for p in seen if p['phase'] in ('waiting','release')))
+        self.assertEqual(self.controller.learning_progress['phase'],'done')
+
     async def test_learning_persists_and_reload_restores_codes(self):
         await self.controller.learn('tv',['power'])
         saved=deepcopy(self.controller.codes)

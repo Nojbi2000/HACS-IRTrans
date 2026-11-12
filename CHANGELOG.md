@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.4
+
+- Show sample instructions directly in the active Learn/Learn repeat row.
+- Add a Learning status sensor to each remote device for progress, completion and errors.
+- Keep that status readable when device communication fails or controls are disabled.
+- Include learning progress and online state in diagnostics.
+
 ## 2.3.3
 
 - Recognize complete short-repeat trains containing bounded sub-350 µs marks at frame boundaries.

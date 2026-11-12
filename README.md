@@ -39,6 +39,17 @@ An IR code identifies the learned command, not a unique physical handheld remote
 
 The standard remote actions below remain available for scripts and automations.
 
+## Visible learning instructions (2.3.4)
+
+On the remote device page the active **Learn** or **Learn repeat** row changes
+its display name to the current instruction, including 1/3, 2/3, 3/3 and release
+pauses. Controls are intentionally disabled while capture is in progress. The
+same remote device has a **Sensors → Learning status** entity showing the latest
+instruction, completion or error. It stays readable when the IRTrans becomes
+unavailable and explains that condition instead of showing only unavailable.
+The main HA persistent notifications are still provided, but opening them is no
+longer necessary to follow learning. No modal dialog or mobile push is implied.
+
 ## Repeat trains with short boundary glitches (2.3.3)
 
 Received repeat trains may contain an extra 208–328 µs mark after a complete

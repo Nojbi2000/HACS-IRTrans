@@ -1,3 +1,23 @@
+IRTrans Direct 2.3.4 – visible learning progress, 2026-11-12
+
+67 protocol/controller tests pass. The real-HA 2026.11.1 smoke passes with external
+networking disabled. New tests check waiting/release transitions for samples
+1/3–3/3, successful completion, repeat-versus-short state and retained failure
+messages. The real-HA test pauses each capture and inspects actual entity states:
+the unavailable Learn row's friendly_name includes the current sample instruction;
+the child remote Learning status sensor shows the same sample; completion reads
+Saved; a simulated offline state leaves Learning status readable with an explicit
+IRTrans unavailable message. Existing learning, storage and receive tests pass.
+
+No physical IR commands were sent for this UI update. Existing stored codes and
+network protocols are unchanged. The screenshot's unavailable controls alone
+cannot establish whether learning was active or device communication failed;
+the new status distinguishes these states while the config entry remains loaded.
+Persistent HA notifications remain available; no browser modal or mobile push
+notification is implemented or promised.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.3.3 – bounded repeat-boundary glitches, 2026-11-12
 
 64 protocol/controller tests pass. New tests exercise an extra short mark between

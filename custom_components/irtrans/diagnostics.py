@@ -30,4 +30,6 @@ async def async_get_config_entry_diagnostics(hass, entry):
             "received_packets": controller.receive_log_count,
             "receive_log": list(controller.receive_log),
             "learned_signals": learned,
+            "learning_progress": dict(controller.learning_progress),
+            "online": controller.online, "learning": controller.learning,
             "last_error": controller.last_error}

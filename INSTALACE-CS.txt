@@ -1,4 +1,4 @@
-IRTrans Direct 2.3.3 – Home Assistant, přímo bez irserver
+IRTrans Direct 2.3.4 – Home Assistant, přímo bez irserver
 =====================================================
 Připraveno 11. 11. 2026. Ověřeno v Home Assistant Core 2026.11.1 / Python 3.14.
 
@@ -12,7 +12,7 @@ CO TATO VERZE DĚLÁ
 - Nepotřebuje irserver, další počítač ani hardwarovou databázi IRDB.
 
 Jde o vlastní novou implementaci pro přímý protokol, ne o oficiální release
-původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.3.3.
+původní integrace. ZIP 1.41.1 z dřívější odpovědi nahraďte touto verzí 2.3.4.
 Kódy z ayControl se automaticky neimportují; naučíte je znovu v HA.
 
 INSTALACE / VÝMĚNA PŮVODNÍ INTEGRACE
@@ -74,6 +74,21 @@ Délku historie Activity řídí nastavení Recorder/Logbook v HA. Log funguje,
 i když stránku zrovna nemáte otevřenou. Vypnutí Remote pozastaví příjem i log.
 Během učení se příjmy logují, ale nespouštějí pojmenované automatizační události.
 Log neznamená automatické naučení: pro uložení vysílatelného povelu slouží Learn.
+
+VIDITELNÉ VÝZVY K UČENÍ (2.3.4)
+
+Při stisknutí Learn se jeho řádek přímo na stránce ovladače mění na výzvu:
+1/3: Briefly press Play, then release -> Release Play -> 2/3 -> 3/3.
+Pro Learn repeat je výzva Hold … for 2–3 s. Mezi vzorky tlačítko pusťte.
+Ovládací tlačítka jsou během učení zašedlá úmyslně, průběh ale zůstává čitelný.
+
+Na stejné stránce je také Sensors -> Learning status. Ukazuje průběh, uložení
+nebo chybu. Když je IRTrans nedostupný, zůstane tento stav čitelný a oznámí
+IRTrans unavailable. Zašedlá tlačítka tedy mohou znamenat učení nebo nedostupné
+zařízení; rozlišení je v Learning status. Oznámení HA dál fungují, ale nejsou
+jediným místem s pokyny. Samostatné vyskakovací okno se neotvírá.
+
+V HACS aktualizujte a restartujte HA. Uložené povely není potřeba znovu učit.
 
 OPRAVA NAVAZUJÍCÍCH REPEATŮ (2.3.3)
 
@@ -151,7 +166,7 @@ lze omezit na is_repeat: false. Událost puštění se neodhaduje.
 
 OVLADAČE A TLAČÍTKA (2.3.0)
 
-V HACS aktualizujte IRTrans Direct na 2.3.3 a restartujte Home Assistant.
+V HACS aktualizujte IRTrans Direct na 2.3.4 a restartujte Home Assistant.
 Integraci neodstraňujte; naučené kódy a existující ID entit zůstanou zachované.
 
 Settings -> Devices & services -> IRTrans Direct -> Configure:

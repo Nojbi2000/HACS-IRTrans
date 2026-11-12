@@ -15,6 +15,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .binary import ProtocolError, ReceiveHub, resolve_ipv4
 from .const import DOMAIN, PLATFORMS
 from .controller import Controller
+from .panel import async_register_panel, async_remove_panel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
             )
             stage = "setting up HA entities"
             await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+            await async_register_panel(hass)
         except (Exception, asyncio.CancelledError) as exc:
             if controller is not None:
                 await controller.close()
@@ -60,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 if state["hub"] is not None:
                     state["hub"].handlers.pop(controller.client.ip, None)
             if not state["entries"] and state["hub"] is not None:
+                async_remove_panel(hass)
                 state["hub"].close()
                 state["hub"] = None
             if isinstance(exc, asyncio.CancelledError):
@@ -87,6 +90,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         state["hub"].handlers.pop(controller.client.ip, None)
         await controller.close()
         if not state["entries"]:
+            async_remove_panel(hass)
             state["hub"].close()
             state["hub"] = None
     return True

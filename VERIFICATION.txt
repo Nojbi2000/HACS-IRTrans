@@ -1,3 +1,27 @@
+IRTrans Direct 2.4.0 – grouped command panel, 2026-11-12
+
+67 protocol/controller tests pass. Real HA 2026.11.1 smoke passes and additionally
+checks automatic custom-panel registration, local module URL, entity mapping for
+each command, administrator-only snapshot access, rejection of non-admin access,
+and panel removal when the last entry unloads. Reload and legacy-entry paths
+remain covered without duplicate static-path registration.
+
+A local headless Chrome test using Playwright and mocked HA state/service data
+checks separated command blocks, remote selection, Send/Learn repeat calls,
+text naming, visible in-card sample progress, disabled actions during learning,
+offline explanation, escaped labels and absence of browser errors. Mobile light,
+mobile dark and desktop screenshots were visually checked. This browser test
+uses mocked HA data; the Python integration test uses actual HA and simulated
+IR hardware. No physical IR traffic or production HA installation was performed.
+
+Implementation uses supported panel_custom.async_register_panel and asynchronous
+StaticPathConfig registration verified against installed HA 2026.11.1 sources.
+HA's native device Controls list itself is unchanged; separated blocks are in
+the new IRTrans sidebar panel. No YAML or manual dashboard resources are needed.
+The panel is available to HA admins and reuses standard entity services.
+
+Earlier verification records follow.
+
 IRTrans Direct 2.3.4 – visible learning progress, 2026-11-12
 
 67 protocol/controller tests pass. The real-HA 2026.11.1 smoke passes with external

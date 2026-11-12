@@ -64,6 +64,33 @@ async def main():
             print('Entities:',remote,sensor)
             assert hass.states.get(remote).state=='on'
             controller=hass.data['irtrans']['entries'][entry.entry_id]
+            from homeassistant.components import frontend
+            from custom_components.irtrans.panel import websocket_panel, URL
+            from types import SimpleNamespace
+            assert 'irtrans' in hass.data[frontend.DATA_PANELS]
+            panel=hass.data[frontend.DATA_PANELS]['irtrans']
+            assert panel.config['_panel_custom']['module_url']==URL
+            responses=[]
+            connection=SimpleNamespace(user=SimpleNamespace(is_admin=True),
+                send_result=lambda message_id,result:responses.append(result))
+            websocket_panel(hass,connection,{'id':1,'type':'irtrans/panel'})
+            await asyncio.sleep(.02)
+            assert len(responses)==1
+            assert len(responses[0]['remotes'])==1
+            snapshot=responses[0]['remotes'][0]
+            assert snapshot['name']=='Remote 01'
+            assert len(snapshot['slots'])==8
+            assert snapshot['slots'][0]['entities']['learn']
+            assert snapshot['status_entity']
+            from homeassistant.exceptions import Unauthorized
+            denied=False
+            try:
+                websocket_panel(hass,SimpleNamespace(user=SimpleNamespace(is_admin=False)),
+                                {'id':2,'type':'irtrans/panel'})
+            except Unauthorized:
+                denied=True
+            assert denied
+            print('Automatic grouped panel, entity mapping and admin access restriction: OK')
             events=[]
             receive_log_events=[]
             hass.bus.async_listen('irtrans_receive_log',lambda event:receive_log_events.append(event.data))
@@ -345,6 +372,7 @@ async def main():
 
             assert await hass.config_entries.async_unload(entry.entry_id)
             assert hass.data['irtrans']['hub'] is None
+            assert 'irtrans' not in hass.data[frontend.DATA_PANELS]
             assert not fake.errors,fake.errors
             print('Delete, unload and socket cleanup: OK')
             # Existing v1.41 entries have no unique_id or receive_port key.

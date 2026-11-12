@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.0
+
+- Automatically register an admin IRTrans sidebar panel with separated command cards.
+- Group names and Learn/Learn repeat/Send/Hold actions under each command.
+- Show inline learning progress, saved-code status and errors.
+- Support remote selection, naming and mobile/light/dark layouts without dashboard YAML.
+- Use existing HA entities/services; leave codes and IR traffic unchanged.
+
 ## 2.3.4
 
 - Show sample instructions directly in the active Learn/Learn repeat row.
